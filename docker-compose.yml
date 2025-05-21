@@ -1,0 +1,77 @@
+# docker-compose.yml
+# Docker Compose 文件格式版本 (此行已移除，避免警告)
+
+services:
+  # Redis 服务：作为 RQ 的消息队列和数据存储
+  redis:
+    image: redis:7-alpine # 使用轻量级的 Redis 官方镜像
+    container_name: deepseek_redis # 指定容器名称
+    ports:
+      - "6379:6379" # 将宿主机的 6379 端口映射到容器的 6379 端口
+    healthcheck: # 健康检查，确保 Redis 容器完全启动并可用
+      test: ["CMD", "redis-cli", "ping"] # 执行 ping 命令
+      interval: 5s # 每 5 秒检查一次
+      timeout: 3s # 超时时间 3 秒
+      retries: 5 # 重试 5 次
+    volumes:
+      - redis_data:/data # 持久化 Redis 数据
+
+  # Web 服务：Flask 应用，提供 API 接口
+  web:
+    build:
+      context: . # Dockerfile 的构建上下文是当前目录 (deepseek_dispatcher_new/)
+      dockerfile: Dockerfile-web # 指定 Web 服务的 Dockerfile
+    container_name: deepseek_web # 指定容器名称
+    depends_on: # 依赖 Redis 服务，确保 Redis 健康后才启动 Web
+      redis:
+        condition: service_healthy
+    environment: # 注入环境变量到容器，这些变量将被 config/settings.py 读取
+      - REDIS_URL=redis://redis:6379/0 # 容器内 Redis 的服务名是 'redis'
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY} # 从宿主机的 .env 文件获取
+      - DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL} # 从宿主机的 .env 文件获取
+      - MODEL_NAME=${MODEL_NAME}
+      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
+      - MODEL_TOP_P=${MODEL_TOP_P} # <-- 已修正为 MODEL_TOP_P
+      - TASK_QUEUE_NAME=${TASK_QUEUE_NAME}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - LOGS_DIR=/app/logs # 容器内的日志目录
+      - RESULTS_DIR=/app/results # 容器内的结果目录
+      - FLASK_HOST=0.0.0.0
+      - FLASK_PORT=8000
+      - FLASK_DEBUG=${FLASK_DEBUG}
+      - FLASK_ENV=${FLASK_ENV}
+      - DEFAULT_RATELIMIT=${DEFAULT_RATELIMIT}
+    ports:
+      - "8000:8000" # 将宿主机的 8000 端口映射到容器的 8000 端口
+    volumes:
+      - ./logs:/app/logs # 将宿主机 logs 目录挂载到容器的 /app/logs，持久化日志
+      - ./results:/app/results # 将宿主机 results 目录挂载到容器的 /app/results，持久化结果
+
+  # Worker 服务：RQ Worker，处理后台任务
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile-worker # 指定 Worker 服务的 Dockerfile
+    container_name: deepseek_worker # 指定容器名称
+    depends_on: # 依赖 Redis 服务，确保 Redis 健康后才启动 Worker
+      redis:
+        condition: service_healthy
+    environment: # 注入环境变量到容器
+      - REDIS_URL=redis://redis:6379/0
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+      - DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL}
+      - MODEL_NAME=${MODEL_NAME}
+      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
+      - MODEL_TOP_P=${MODEL_TOP_P} # <-- 已修正为 MODEL_TOP_P
+      - TASK_QUEUE_NAME=${TASK_QUEUE_NAME}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - LOGS_DIR=/app/logs
+      - RESULTS_DIR=/app/results
+    volumes:
+      - ./logs:/app/logs # 同样挂载日志目录
+      - ./results:/app/results # 同样挂载结果目录
+    command: ["python", "worker/worker.py"]
+
+# 定义数据卷，用于持久化 Redis 数据
+volumes:
+  redis_data:

@@ -1,0 +1,24 @@
+# Python 虚拟环境
+.venv_dispatcher_new/
+
+# Python 缓存文件
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+
+# 环境变量文件
+.env
+
+# 日志和结果目录
+logs/
+results/
+
+# Docker 相关（如果需要忽略更多，可以添加）
+# .dockerignore # 通常 .dockerignore 不会忽略，因为它是 Docker 构建的配置
+# Dockerfile* # 如果您不想上传 Dockerfile，但通常是需要的
+
+# 其他可能不需要上传的文件或目录
+# .DS_Store # macOS 系统文件
+# *.log
+# *.sqlite3
