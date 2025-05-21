@@ -1,75 +1,133 @@
 # web/app.py
-from flask import Flask, jsonify, request # 确保导入了 request
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-from redis import Redis # 用于 Limiter 存储连接测试
+import os
+import json
+import logging
+import uuid # 导入 uuid 模块用于生成 trace_id
+from flask import Flask, request, jsonify
+from rq import Queue
+from redis import Redis # 修正：直接从 redis 库导入 Redis
+from config.settings import REDIS_URL, TASK_QUEUE_NAME, LOG_LEVEL
+from dispatcher.tasks import generate_text_task # 确保导入的是 generate_text_task
 
-from logger.logger import get_logger
-from config.settings import (
-    REDIS_URL, FLASK_HOST, FLASK_PORT, FLASK_DEBUG, FLASK_ENV,
-    DEFAULT_RATELIMIT
-)
-from dispatcher.dispatcher import register_dispatcher_routes
-
-logger = get_logger(__name__)
+# 配置日志
+logging.basicConfig(level=LOG_LEVEL, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def create_app():
     """
-    Flask 应用工厂函数，用于创建和配置 Flask 应用实例。
+    创建并配置 Flask 应用实例。
     """
     app = Flask(__name__)
 
-    # 1. 加载配置
-    # 配置已通过 config.settings 从环境变量加载
-    logger.info("应用配置已加载。")
+    # 初始化 Redis 连接
+    # 在 Docker Compose 环境中，'redis' 是 Redis 服务的 hostname
+    app.redis_conn = Redis.from_url(REDIS_URL)
+    # 创建一个 RQ 队列实例
+    app.task_queue = Queue(TASK_QUEUE_NAME, connection=app.redis_conn)
 
-    # 2. 初始化 Flask-Limiter (请求限流)
-    try:
-        # 尝试连接 Redis，确保 Limiter 可以正常工作
-        # 注意: Limiter 内部会处理 Redis 连接池，这里只是启动前的连接测试
-        test_redis_conn = Redis.from_url(REDIS_URL)
-        test_redis_conn.ping()
-        
-        limiter = Limiter(
-            key_func=get_remote_address,
-            default_limits=[DEFAULT_RATELIMIT], # 应用全局默认限流
-            storage_uri=REDIS_URL,
-            app=app # 绑定到 Flask 应用实例
-        )
-        logger.info(f"Flask-Limiter 已初始化，使用 Redis 存储: {REDIS_URL}")
-    except Exception as e:
-        logger.error(f"Flask-Limiter 初始化失败: {e}", exc_info=True)
-        # 在生产环境中，这里可以选择抛出异常，阻止应用启动，确保限流服务可用
-        # 但在开发过程中，为了灵活性，可以暂时允许启动
-        raise # 强制抛出异常，确保 Redis 连接问题在启动时被发现
+    logger.info(f"Flask app initialized. Connecting to Redis at: {REDIS_URL}")
+    logger.info(f"Using task queue: {TASK_QUEUE_NAME}")
 
-    # 3. 注册蓝图和路由
-    register_dispatcher_routes(app) # 注册调度器相关的 API 路由
-    logger.info("Dispatcher 路由已注册。")
-
-    # 4. 定义根路由
-    @app.route("/")
+    @app.route('/')
     def index():
-        logger.info("收到对根路径 '/' 的请求。")
-        return jsonify({"message": "Deepseek Dispatcher Service is running!", "status": "OK"}), 200
+        """
+        根路由，用于简单检查服务是否运行。
+        """
+        return "LLM Dispatcher is running!"
 
-    # 5. 错误处理
-    @app.errorhandler(404)
-    def not_found(error):
-        logger.warning(f"404 Not Found: {request.path}")
-        return jsonify({"error": "Not Found", "message": f"The requested URL {request.path} was not found."}), 404
+    @app.route('/generate', methods=['POST'])
+    def generate():
+        """
+        接收生成请求，并将任务加入 RQ 队列。
+        """
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Invalid JSON"}), 400
 
-    @app.errorhandler(500)
-    def internal_server_error(error):
-        logger.error(f"500 Internal Server Error: {error}", exc_info=True)
-        return jsonify({"error": "Internal Server Error", "message": "An unexpected error occurred."}), 500
+        prompt = data.get('prompt')
+        max_tokens = data.get('max_tokens', 100)
+        temperature = data.get('temperature', 0.7)
+        top_p = data.get('top_p', 0.9)
 
-    logger.info("Flask 应用创建完成。")
+        if not prompt:
+            return jsonify({"error": "Prompt is required"}), 400
+
+        # 生成唯一的 trace_id 和 task_id (作为 RQ 的 job_id)
+        trace_id = str(uuid.uuid4())
+        task_id = str(uuid.uuid4())
+        
+        # 准备传递给 RQ 任务的 task_data 字典
+        task_data = {
+            "prompt": prompt,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "model_kwargs": { # 将模型参数也打包到 model_kwargs 中，以便 AIExecutor 使用
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "top_p": top_p
+            }
+        }
+
+        try:
+            # 将任务加入 RQ 队列，传递 task_data, trace_id, task_id
+            job = app.task_queue.enqueue(
+                generate_text_task, # 调用 dispatcher.tasks 中的 generate_text_task
+                task_data,
+                trace_id,
+                task_id, # 将生成的 task_id 作为 RQ 的 job_id
+                job_timeout=300 # 设置任务超时时间，例如 5 分钟
+            )
+            logger.info(f"Task enqueued with ID: {job.id}, Trace ID: {trace_id}")
+            return jsonify({
+                "message": "Task enqueued successfully!",
+                "task_id": job.id, # 返回 RQ 的 job_id
+                "trace_id": trace_id # 返回 trace_id
+            }), 202 # 202 Accepted 表示请求已接受，任务正在处理
+        except Exception as e:
+            logger.error(f"Error enqueuing task: {e}", exc_info=True)
+            return jsonify({"error": "Failed to enqueue task", "details": str(e)}), 500
+
+    @app.route('/task_status/<task_id>', methods=['GET'])
+    def task_status(task_id):
+        """
+        检查指定任务 ID 的状态和结果。
+        """
+        try:
+            job = app.task_queue.fetch_job(task_id)
+            if job:
+                status = job.get_status()
+                result = job.result
+                
+                # 如果任务成功，result 是一个字典 {"status": "success", "result": completion_result}
+                # 我们需要提取其中的 'result' 键
+                final_result = None
+                if status == 'finished' and isinstance(result, dict) and 'result' in result:
+                    final_result = result['result']
+                elif status == 'failed' and isinstance(result, dict) and 'error' in result:
+                    final_result = result['error'] # 如果失败，显示错误信息
+                else:
+                    final_result = result # 其他状态直接显示原始结果
+
+                logger.info(f"Task {task_id} status: {status}, result: {str(final_result)[:100] if isinstance(final_result, str) else final_result}")
+                return jsonify({
+                    "task_id": task_id,
+                    "status": status,
+                    "result": final_result
+                })
+            else:
+                return jsonify({"error": "Task not found"}), 404
+        except Exception as e:
+            logger.error(f"Error fetching task status for {task_id}: {e}", exc_info=True)
+            return jsonify({"error": "Failed to retrieve task status", "details": str(e)}), 500
+
     return app
 
-if __name__ == "__main__":
-    # 在开发模式下运行 Flask 应用
-    app = create_app()
-    logger.info(f"Flask 应用正在 {FLASK_ENV} 环境下运行。")
-    logger.info(f"监听地址: {FLASK_HOST}:{FLASK_PORT}, Debug 模式: {FLASK_DEBUG}")
-    app.run(host=FLASK_HOST, port=FLASK_PORT, debug=FLASK_DEBUG)
+if __name__ == '__main__':
+    # 确保日志和结果目录存在 (如果本地直接运行，而不是通过 Docker)
+    os.makedirs(os.path.join(os.getcwd(), 'logs'), exist_ok=True)
+    os.makedirs(os.path.join(os.getcwd(), 'results'), exist_ok=True)
+    
+    # 在 Docker 中，waitress-serve 会调用 create_app() 并运行应用
+    # 所以这里不需要 app.run()
+    pass

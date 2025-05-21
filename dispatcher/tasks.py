@@ -3,10 +3,12 @@ import json
 import os
 from datetime import datetime
 from typing import Dict, Any, Optional
+import logging # 确保 logging 模块被导入
 
 from ai_executor.executor import AIExecutor, AIExecutorError
 from logger.logger import get_logger
 from config.settings import RESULTS_DIR
+# from services.llm_service import generate_text_from_llm # 如果 AIExecutor 内部处理 LLM 调用，则此导入不再需要
 
 logger = get_logger("deepseek_dispatcher.tasks")
 
@@ -34,7 +36,8 @@ def _save_task_result(task_id: str, trace_id: str, data: Dict[str, Any], status:
     except Exception as e:
         logger.error(f"保存任务 {task_id} 结果失败: {e}", exc_info=True)
 
-def process_ai_task(task_data: Dict[str, Any], trace_id: str, task_id: str):
+# 将 process_ai_task 重命名为 generate_text_task，以匹配 web/app.py 中的调用
+def generate_text_task(task_data: Dict[str, Any], trace_id: str, task_id: str):
     """
     RQ 后台任务函数：接收任务数据，调用 AI 模型，并保存结果。
     此函数将被 RQ Worker 实际执行。
@@ -49,6 +52,7 @@ def process_ai_task(task_data: Dict[str, Any], trace_id: str, task_id: str):
         model_kwargs = task_data.get("model_kwargs", {})
 
         # 调用 AI 模型
+        # 这里直接使用 AIExecutor.generate_completion，而不是 services.llm_service.generate_text_from_llm
         completion_result = executor.generate_completion(messages, **model_kwargs)
 
         # 保存成功结果

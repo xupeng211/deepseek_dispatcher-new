@@ -2,14 +2,14 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
-from config.settings import LOG_LEVEL, LOGS_DIR
+from config.settings import LOG_LEVEL, LOGS_DIR # 注意：这里是 LOGS_DIR
 
 def get_logger(name="deepseek_dispatcher"):
     """
-    配置并返回一个 Logger 实例。
-    建议所有模块使用此接口获取 Logger，以保持一致的格式和级别。
-    日志会同时输出到控制台和文件。
-    """
+    配置并返回一个 Logger 实例。
+    建议所有模块使用此接口获取 Logger，以保持一致的格式和级别。
+    日志会同时输出到控制台和文件。
+    """
     logger = logging.getLogger(name)
 
     # 避免重复添加 handlers

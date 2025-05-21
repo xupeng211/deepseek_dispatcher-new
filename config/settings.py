@@ -7,7 +7,8 @@ load_dotenv()
 
 # --- Redis 配置 ---
 # REDIS_BROKER_URL 和 REDIS_BACKEND_URL 统一使用 REDIS_URL
-REDIS_URL = os.getenv("REDIS_BROKER_URL", "redis://localhost:6379/0")
+# 修改为直接读取 REDIS_URL 环境变量
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 TASK_QUEUE_NAME = os.getenv("TASK_QUEUE_NAME", "deepseek_tasks")
 
 # --- 大模型 API 配置 ---
@@ -41,4 +42,4 @@ DEFAULT_RATELIMIT = os.getenv("DEFAULT_RATELIMIT", "1000 per hour") # 确保这�
 if not DASHSCOPE_API_KEY:
     print("警告: DASHSCOPE_API_KEY 未设置。大模型 API 调用可能失败。")
 if not REDIS_URL:
-    raise ValueError("REDIS_BROKER_URL 环境变量是必需的，请在 .env 文件中设置。")
+    raise ValueError("REDIS_URL 环境变量是必需的，请在 .env 文件中设置。")

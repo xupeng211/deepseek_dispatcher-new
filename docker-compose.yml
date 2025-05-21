@@ -70,6 +70,7 @@ services:
     volumes:
       - ./logs:/app/logs # 同样挂载日志目录
       - ./results:/app/results # 同样挂载结果目录
+    # 最终的生产命令
     command: ["python", "worker/worker.py"]
 
 # 定义数据卷，用于持久化 Redis 数据
