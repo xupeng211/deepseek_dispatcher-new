@@ -6,6 +6,8 @@ __pycache__/
 .Python/
 env/
 venv/
+.venv/ # 确保包含 .venv/
+.venv_dispatcher_new/ # 确保包含您当前虚拟环境的名称
 *.env
 .env
 .pytest_cache/
