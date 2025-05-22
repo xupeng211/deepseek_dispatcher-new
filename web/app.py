@@ -1,133 +1,275 @@
 # web/app.py
 import os
-import json
+import uuid
 import logging
-import uuid # 导入 uuid 模块用于生成 trace_id
-from flask import Flask, request, jsonify
-from rq import Queue
-from redis import Redis # 修正：直接从 redis 库导入 Redis
-from config.settings import REDIS_URL, TASK_QUEUE_NAME, LOG_LEVEL
-from dispatcher.tasks import generate_text_task # 确保导入的是 generate_text_task
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Depends, status, Query
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List
 
-# 配置日志
-logging.basicConfig(level=LOG_LEVEL, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# 导入配置
+from config.settings import REDIS_URL, TASK_QUEUE_NAME, LOGS_DIR, RESULTS_DIR, DASHSCOPE_API_KEY, MODEL_NAME, MODEL_PARAMS
+from dispatcher.dispatcher import TaskDispatcher, TaskDispatchError # 导入 TaskDispatcher 类和 TaskDispatchError
+from logger.logger import get_logger # 导入 get_logger 函数
 
-def create_app():
+# 设置日志
+logger = get_logger(__name__)
+
+# 初始化 FastAPI 应用
+app = FastAPI(
+    title="DeepSeek Dispatcher API",
+    description="API for dispatching and managing DeepSeek LLM inference tasks.",
+    version="1.0.0",
+)
+
+# 初始化 TaskDispatcher 实例
+# 建议在应用启动时初始化一次，而不是每个请求都创建新实例
+# 这样可以重用 Redis 连接池等资源
+task_dispatcher = TaskDispatcher()
+
+# --- Pydantic 模型用于请求和响应验证 ---
+class GenerateTextRequest(BaseModel):
     """
-    创建并配置 Flask 应用实例。
+    请求体模型，用于生成文本任务。
     """
-    app = Flask(__name__)
+    prompt: str = Field(..., min_length=1, description="The prompt for text generation.")
+    max_tokens: int = Field(100, ge=1, le=2048, description="Maximum number of tokens to generate.")
+    temperature: float = Field(0.7, ge=0.0, le=1.0, description="Sampling temperature for text generation.")
+    top_p: float = Field(0.8, ge=0.0, le=1.0, description="Nucleus sampling parameter for text generation.")
+    model_name: Optional[str] = Field(MODEL_NAME, description="The LLM model to use for generation.")
 
-    # 初始化 Redis 连接
-    # 在 Docker Compose 环境中，'redis' 是 Redis 服务的 hostname
-    app.redis_conn = Redis.from_url(REDIS_URL)
-    # 创建一个 RQ 队列实例
-    app.task_queue = Queue(TASK_QUEUE_NAME, connection=app.redis_conn)
+    # 解决 Pydantic 警告
+    model_config = {
+        'protected_namespaces': ()
+    }
 
-    logger.info(f"Flask app initialized. Connecting to Redis at: {REDIS_URL}")
-    logger.info(f"Using task queue: {TASK_QUEUE_NAME}")
+class TaskStatusResponse(BaseModel):
+    """
+    任务状态响应模型。
+    """
+    job_id: str
+    status: str
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    enqueued_at: Optional[str] = None
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
 
-    @app.route('/')
-    def index():
-        """
-        根路由，用于简单检查服务是否运行。
-        """
-        return "LLM Dispatcher is running!"
+class EnqueueResponse(BaseModel):
+    """
+    任务入队响应模型。
+    """
+    message: str
+    job_id: str # 对应 TaskDispatcher 的 job_id
+    trace_id: str
 
-    @app.route('/generate', methods=['POST'])
-    def generate():
-        """
-        接收生成请求，并将任务加入 RQ 队列。
-        """
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "Invalid JSON"}), 400
+class QueueMetricsResponse(BaseModel):
+    """
+    队列指标响应模型。
+    """
+    queue_name: str
+    queued_jobs: int
+    started_jobs: int
+    finished_jobs: int
+    failed_jobs: int
+    scheduled_jobs: int
+    deferred_jobs: int
+    total_jobs_in_queue: int
 
-        prompt = data.get('prompt')
-        max_tokens = data.get('max_tokens', 100)
-        temperature = data.get('temperature', 0.7)
-        top_p = data.get('top_p', 0.9)
+class JobInfo(BaseModel):
+    """
+    单个任务信息模型。
+    """
+    job_id: str
+    status: str
+    created_at: Optional[str] = None
+    enqueued_at: Optional[str] = None
+    description: Optional[str] = None
 
-        if not prompt:
-            return jsonify({"error": "Prompt is required"}), 400
+class JobsListResponse(BaseModel):
+    """
+    任务列表响应模型。
+    """
+    registry_type: str
+    total_jobs: int
+    current_page: int
+    per_page: int
+    jobs: List[JobInfo]
 
-        # 生成唯一的 trace_id 和 task_id (作为 RQ 的 job_id)
-        trace_id = str(uuid.uuid4())
-        task_id = str(uuid.uuid4())
-        
-        # 准备传递给 RQ 任务的 task_data 字典
+class WorkerInfo(BaseModel):
+    """
+    单个 Worker 信息模型。
+    """
+    name: str
+    state: str
+    current_job_id: Optional[str] = None
+    queues: List[str]
+    last_heartbeat: Optional[str] = None
+    pid: Optional[int] = None
+
+class WorkersStatusResponse(BaseModel):
+    """
+    Worker 状态响应模型。
+    """
+    workers: List[WorkerInfo]
+    total_workers: int
+
+# --- API 端点 ---
+
+@app.post("/api/dispatch-task", response_model=EnqueueResponse, status_code=status.HTTP_202_ACCEPTED)
+async def dispatch_task_route(request_data: GenerateTextRequest,
+                              x_trace_id: Optional[str] = Query(None, alias="X-Trace-ID", description="Optional trace ID for the request.")):
+    """
+    HTTP API 接口：接收任务请求并将其放入 RQ 队列。
+    """
+    trace_id = x_trace_id if x_trace_id else str(uuid.uuid4())
+    # 关键修正：使用 extra 参数传递 trace_id
+    logger.info("收到任务调度请求", extra={"trace_id": trace_id})
+
+    try:
+        # 准备 task_data 字典，传递给 TaskDispatcher 的 enqueue_task
         task_data = {
-            "prompt": prompt,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "top_p": top_p,
-            "model_kwargs": { # 将模型参数也打包到 model_kwargs 中，以便 AIExecutor 使用
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "top_p": top_p
+            "prompt": request_data.prompt,
+            "model_kwargs": {
+                "max_tokens": request_data.max_tokens,
+                "temperature": request_data.temperature,
+                "top_p": request_data.top_p,
+                "model_name": request_data.model_name,
             }
         }
+        job_id = task_dispatcher.enqueue_task(task_data, trace_id)
+        # 关键修正：使用 extra 参数传递 job_id 和 trace_id
+        logger.info("任务已成功入队", extra={"job_id": job_id, "trace_id": trace_id})
+        return EnqueueResponse(
+            message="Task enqueued successfully",
+            job_id=job_id,
+            trace_id=trace_id
+        )
+    except TaskDispatchError as e:
+        # 关键修正：使用 extra 参数传递 trace_id 和 error 信息
+        logger.error(f"调度请求处理失败: {e}", exc_info=True, extra={"trace_id": trace_id, "error_details": str(e)})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to enqueue task: {str(e)}"
+        )
+    except Exception as e:
+        # 关键修正：使用 extra 参数传递 trace_id 和 error 信息
+        logger.error(f"处理调度请求时发生未知错误: {e}", exc_info=True, extra={"trace_id": trace_id, "error_details": str(e)})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}"
+        )
 
-        try:
-            # 将任务加入 RQ 队列，传递 task_data, trace_id, task_id
-            job = app.task_queue.enqueue(
-                generate_text_task, # 调用 dispatcher.tasks 中的 generate_text_task
-                task_data,
-                trace_id,
-                task_id, # 将生成的 task_id 作为 RQ 的 job_id
-                job_timeout=300 # 设置任务超时时间，例如 5 分钟
-            )
-            logger.info(f"Task enqueued with ID: {job.id}, Trace ID: {trace_id}")
-            return jsonify({
-                "message": "Task enqueued successfully!",
-                "task_id": job.id, # 返回 RQ 的 job_id
-                "trace_id": trace_id # 返回 trace_id
-            }), 202 # 202 Accepted 表示请求已接受，任务正在处理
-        except Exception as e:
-            logger.error(f"Error enqueuing task: {e}", exc_info=True)
-            return jsonify({"error": "Failed to enqueue task", "details": str(e)}), 500
 
-    @app.route('/task_status/<task_id>', methods=['GET'])
-    def task_status(task_id):
-        """
-        检查指定任务 ID 的状态和结果。
-        """
-        try:
-            job = app.task_queue.fetch_job(task_id)
-            if job:
-                status = job.get_status()
-                result = job.result
-                
-                # 如果任务成功，result 是一个字典 {"status": "success", "result": completion_result}
-                # 我们需要提取其中的 'result' 键
-                final_result = None
-                if status == 'finished' and isinstance(result, dict) and 'result' in result:
-                    final_result = result['result']
-                elif status == 'failed' and isinstance(result, dict) and 'error' in result:
-                    final_result = result['error'] # 如果失败，显示错误信息
-                else:
-                    final_result = result # 其他状态直接显示原始结果
+@app.get("/api/task-status/{job_id}", response_model=TaskStatusResponse)
+async def get_task_status_route(job_id: str):
+    """
+    HTTP API 接口：获取指定 Job ID 的任务状态。
+    """
+    # 关键修正：使用 extra 参数传递 job_id
+    logger.info("收到查询任务状态请求", extra={"job_id": job_id})
+    try:
+        status_info = task_dispatcher.get_task_status(job_id)
+        if status_info.get("status") == "not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        
+        # 将 TaskDispatcher 返回的字典直接映射到 Pydantic 模型
+        return TaskStatusResponse(**status_info)
+    except Exception as e:
+        # 关键修正：使用 extra 参数传递 job_id 和 error 信息
+        logger.error(f"查询任务状态失败，Job ID: {job_id}: {e}", exc_info=True, extra={"job_id": job_id, "error_details": str(e)})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get task status: {str(e)}"
+        )
 
-                logger.info(f"Task {task_id} status: {status}, result: {str(final_result)[:100] if isinstance(final_result, str) else final_result}")
-                return jsonify({
-                    "task_id": task_id,
-                    "status": status,
-                    "result": final_result
-                })
-            else:
-                return jsonify({"error": "Task not found"}), 404
-        except Exception as e:
-            logger.error(f"Error fetching task status for {task_id}: {e}", exc_info=True)
-            return jsonify({"error": "Failed to retrieve task status", "details": str(e)}), 500
+@app.get("/api/queue-metrics", response_model=QueueMetricsResponse)
+async def get_queue_metrics_route():
+    """
+    HTTP API 接口：获取 RQ 队列的指标概览。
+    """
+    logger.info("收到查询队列指标请求。") # 此处无需 extra
+    try:
+        metrics = task_dispatcher.get_queue_metrics()
+        return QueueMetricsResponse(**metrics)
+    except Exception as e:
+        logger.error(f"获取队列指标失败: {e}", exc_info=True, extra={"error_details": str(e)}) # 修正：使用 extra
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get queue metrics: {str(e)}"
+        )
 
-    return app
+@app.get("/api/queue-jobs/{registry_type}", response_model=JobsListResponse)
+async def get_queue_jobs_route(
+    registry_type: str,
+    page: int = Query(1, ge=1, description="Page number for job list."),
+    per_page: int = Query(20, ge=1, le=100, description="Number of jobs per page.")
+):
+    """
+    HTTP API 接口：获取特定注册表（queued, started, finished, failed, scheduled, deferred）中的任务列表。
+    """
+    if registry_type not in ['queued', 'started', 'finished', 'failed', 'scheduled', 'deferred']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid registry_type. Must be one of: 'queued', 'started', 'finished', 'failed', 'scheduled', 'deferred'."
+        )
 
-if __name__ == '__main__':
-    # 确保日志和结果目录存在 (如果本地直接运行，而不是通过 Docker)
-    os.makedirs(os.path.join(os.getcwd(), 'logs'), exist_ok=True)
-    os.makedirs(os.path.join(os.getcwd(), 'results'), exist_ok=True)
-    
-    # 在 Docker 中，waitress-serve 会调用 create_app() 并运行应用
-    # 所以这里不需要 app.run()
-    pass
+    # 关键修正：使用 extra 参数传递 registry_type, page, per_page
+    logger.info(f"收到查询 {registry_type} 队列任务列表请求", extra={"registry_type": registry_type, "page": page, "per_page": per_page})
+    try:
+        jobs_list = task_dispatcher.get_jobs_in_registry(registry_type, page, per_page)
+        return JobsListResponse(**jobs_list)
+    except Exception as e:
+        # 关键修正：使用 extra 参数传递 registry_type 和 error 信息
+        logger.error(f"获取 {registry_type} 队列任务列表失败: {e}", exc_info=True, extra={"registry_type": registry_type, "error_details": str(e)})
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get jobs from {registry_type} registry: {str(e)}"
+        )
+
+@app.get("/api/workers-status", response_model=WorkersStatusResponse)
+async def get_workers_status_route():
+    """
+    HTTP API 接口：获取所有 RQ Worker 的状态。
+    """
+    logger.info("收到查询 Worker 状态请求。") # 此处无需 extra
+    try:
+        workers_status = task_dispatcher.get_workers_status()
+        return WorkersStatusResponse(**workers_status)
+    except Exception as e:
+        logger.error(f"获取 Worker 状态失败: {e}", exc_info=True, extra={"error_details": str(e)}) # 修正：使用 extra
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get worker status: {str(e)}"
+        )
+
+@app.get("/health", status_code=status.HTTP_200_OK)
+async def health_check():
+    """
+    健康检查端点。
+    """
+    logger.info("Health check requested.") # 此处无需 extra
+    try:
+        # 尝试 ping Redis 连接以确保其可用
+        task_dispatcher.redis_conn.ping()
+        return {"status": "healthy", "redis_connection": "ok"}
+    except Exception as e:
+        logger.error("Health check failed: Redis connection error", exc_info=True, extra={"error_details": str(e)}) # 修正：使用 extra
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Service unhealthy: Redis connection failed ({str(e)})"
+        )
+
+# --- 应用程序启动和关闭事件 (可选，但推荐用于资源管理) ---
+@app.on_event("startup")
+async def startup_event():
+    logger.info("FastAPI application starting up.") # 此处无需 extra
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("FastAPI application shutting down.") # 此处无需 extra
+    # 可以在这里添加应用关闭时的清理逻辑
+    # 例如，关闭 Redis 连接 (如果 TaskDispatcher 内部没有自动处理)
+    if hasattr(task_dispatcher, 'redis_conn') and task_dispatcher.redis_conn:
+        task_dispatcher.redis_conn.close()
+        logger.info("Redis connection closed.") # 此处无需 extra

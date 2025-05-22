@@ -13,6 +13,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# 设置 PYTHONPATH，确保 Python 能够找到 /app 目录下的模块
+ENV PYTHONPATH=/app
+
 # 复制整个项目代码
 COPY . .
 

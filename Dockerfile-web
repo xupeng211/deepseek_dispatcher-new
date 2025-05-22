@@ -16,11 +16,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # 复制整个应用程序代码到容器中
 COPY . .
 
-# 暴露 Flask 应用的端口
+# 暴露 FastAPI 应用的端口
 EXPOSE 8000
 
 # 定义容器启动时运行的命令
-# 使用 waitress-serve 来运行 Flask 应用
-# --call 参数告诉 waitress 调用 create_app() 函数来获取 Flask 应用实例
-# --host 和 --port 从环境变量获取，确保与 docker-compose.yml 中的映射一致
-CMD ["waitress-serve", "--host", "0.0.0.0", "--port", "8000", "--call", "web.app:create_app"]
+# 使用 uvicorn 来运行 FastAPI 应用
+# web.app 是指 /app/web/app.py，app 是该文件中的 FastAPI 实例
+CMD ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

@@ -1,21 +1,21 @@
 # dispatcher/dispatcher.py
 import uuid
+import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-from flask import Flask, request, jsonify, Blueprint
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from redis import Redis
-from rq import Queue, registries
+from rq import Queue # 保持 Queue 导入不变
 from rq.job import Job
 from rq.exceptions import NoSuchJobError, InvalidJobOperationError
+from rq.worker import Worker # 从 rq.worker 导入 Worker 类
 
 from logger.logger import get_logger
-from config.settings import REDIS_URL, TASK_QUEUE_NAME, DEFAULT_RATELIMIT
+from config.settings import REDIS_URL, TASK_QUEUE_NAME
 
 # 导入 RQ 任务函数
-from dispatcher.tasks import process_ai_task
+# 关键修正：将 process_ai_task 更改为 generate_text_task
+from dispatcher.tasks import generate_text_task
 
 logger = get_logger(__name__)
 
@@ -47,8 +47,9 @@ class TaskDispatcher:
         task_id = str(uuid.uuid4()) # 为每个任务生成一个唯一的 ID
         try:
             # enqueue 的第一个参数是可调用的函数，后面是其参数
+            # 关键修正：使用 generate_text_task
             job = self.queue.enqueue(
-                process_ai_task,
+                generate_text_task,
                 task_data,
                 trace_id,
                 task_id,
@@ -80,13 +81,13 @@ class TaskDispatcher:
                 status = "finished"
             # 检查任务是否在队列中等待
             elif job.is_queued and job_id in self.queue.get_jobs():
-                 status = "queued"
+                status = "queued"
             # 检查任务是否正在执行
             elif job.is_started and job_id in self.queue.started_job_registry:
-                 status = "started"
+                status = "started"
             # 检查任务是否被调度 (enqueue_at)
             elif job.is_scheduled and job_id in self.queue.scheduled_job_registry:
-                 status = "scheduled"
+                status = "scheduled"
 
 
             logger.debug(f"获取任务 {job_id} 状态: {status}")
@@ -187,7 +188,8 @@ class TaskDispatcher:
 
     def get_workers_status(self) -> Dict[str, Any]:
         """获取所有 RQ Worker 的状态和信息"""
-        workers = registries.Worker.all(connection=self.redis_conn)
+        # 修正：使用导入的 Worker 类来获取所有 Worker
+        workers = Worker.all(connection=self.redis_conn)
         worker_info = []
         for worker in workers:
             worker_info.append({
@@ -200,113 +202,3 @@ class TaskDispatcher:
             })
         logger.debug("获取所有 Worker 状态。")
         return {"workers": worker_info, "total_workers": len(worker_info)}
-
-
-# --- Flask 路由注册函数 ---
-# 定义一个蓝图来组织调度相关的 API 路由
-dispatcher_bp = Blueprint('dispatcher_api', __name__, url_prefix='/api')
-
-@dispatcher_bp.route("/dispatch-task", methods=["POST"])
-@Limiter(key_func=get_remote_address, default_limits=[DEFAULT_RATELIMIT], storage_uri=REDIS_URL).exempt_when(lambda: False) # 假设限流在 app factory 中统一管理
-def dispatch_task_route():
-    """
-    HTTP API 接口：接收任务请求并将其放入 RQ 队列。
-    """
-    trace_id = request.headers.get("X-Trace-ID", str(uuid.uuid4()))
-    logger.info(f"收到任务调度请求 (Trace ID: {trace_id})。")
-
-    if not request.is_json:
-        logger.warning(f"请求格式错误，非 JSON 格式 (Trace ID: {trace_id})。")
-        return jsonify({"error": "Request must be JSON"}), 400
-
-    task_data = request.get_json()
-    if not task_data or "prompt" not in task_data:
-        logger.warning(f"请求缺少必要参数 'prompt' (Trace ID: {trace_id})。")
-        return jsonify({"error": "Missing 'prompt' in request body"}), 400
-
-    try:
-        dispatcher = TaskDispatcher() # 每次请求都创建一个新实例，确保最新的 Redis 连接
-        job_id = dispatcher.enqueue_task(task_data, trace_id)
-        return jsonify({
-            "message": "Task enqueued successfully",
-            "job_id": job_id,
-            "trace_id": trace_id
-        }), 202 # 202 Accepted 表示请求已接受，但处理尚未完成
-    except TaskDispatchError as e:
-        logger.error(f"调度请求处理失败: {e} (Trace ID: {trace_id})", exc_info=True)
-        return jsonify({"error": f"Failed to enqueue task: {e}"}), 500
-    except Exception as e:
-        logger.error(f"处理调度请求时发生未知错误: {e} (Trace ID: {trace_id})", exc_info=True)
-        return jsonify({"error": f"An unexpected error occurred: {e}"}), 500
-
-
-@dispatcher_bp.route("/task-status/<job_id>", methods=["GET"])
-def get_task_status_route(job_id: str):
-    """
-    HTTP API 接口：获取指定 Job ID 的任务状态。
-    """
-    logger.info(f"收到查询任务状态请求，Job ID: {job_id}")
-    try:
-        dispatcher = TaskDispatcher()
-        status_info = dispatcher.get_task_status(job_id)
-        if status_info.get("status") == "not_found":
-            return jsonify(status_info), 404
-        return jsonify(status_info), 200
-    except Exception as e:
-        logger.error(f"查询任务状态失败，Job ID: {job_id}: {e}", exc_info=True)
-        return jsonify({"error": f"Failed to get task status: {e}"}), 500
-
-@dispatcher_bp.route("/queue-metrics", methods=["GET"])
-def get_queue_metrics_route():
-    """
-    HTTP API 接口：获取 RQ 队列的指标概览。
-    """
-    logger.info("收到查询队列指标请求。")
-    try:
-        dispatcher = TaskDispatcher()
-        metrics = dispatcher.get_queue_metrics()
-        return jsonify(metrics), 200
-    except Exception as e:
-        logger.error(f"获取队列指标失败: {e}", exc_info=True)
-        return jsonify({"error": f"Failed to get queue metrics: {e}"}), 500
-
-@dispatcher_bp.route("/queue-jobs/<registry_type>", methods=["GET"])
-def get_queue_jobs_route(registry_type: str):
-    """
-    HTTP API 接口：获取特定注册表（queued, started, finished, failed, scheduled, deferred）中的任务列表。
-    查询参数：page, per_page
-    """
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
-    logger.info(f"收到查询 {registry_type} 队列任务列表请求，页码: {page}, 每页: {per_page}。")
-    try:
-        dispatcher = TaskDispatcher()
-        jobs_list = dispatcher.get_jobs_in_registry(registry_type, page, per_page)
-        return jsonify(jobs_list), 200
-    except ValueError as e:
-        logger.warning(f"无效的注册表类型或查询参数: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        logger.error(f"获取 {registry_type} 队列任务列表失败: {e}", exc_info=True)
-        return jsonify({"error": f"Failed to get jobs from {registry_type} registry: {e}"}), 500
-
-@dispatcher_bp.route("/workers-status", methods=["GET"])
-def get_workers_status_route():
-    """
-    HTTP API 接口：获取所有 RQ Worker 的状态。
-    """
-    logger.info("收到查询 Worker 状态请求。")
-    try:
-        dispatcher = TaskDispatcher()
-        workers_status = dispatcher.get_workers_status()
-        return jsonify(workers_status), 200
-    except Exception as e:
-        logger.error(f"获取 Worker 状态失败: {e}", exc_info=True)
-        return jsonify({"error": f"Failed to get worker status: {e}"}), 500
-
-def register_dispatcher_routes(app: Flask):
-    """
-    注册调度器相关的蓝图到 Flask 应用。
-    """
-    app.register_blueprint(dispatcher_bp)
-    logger.info("Dispatcher API 路由已注册到 Flask 应用。")

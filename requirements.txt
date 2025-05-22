@@ -1,31 +1,19 @@
 # requirements.txt
-# Python Web 框架
-Flask>=3.1.0
+# Flask==3.1.1 # 迁移到 FastAPI 后，可以考虑移除 Flask
+# gunicorn==22.0.0 # 迁移到 FastAPI 后，可以考虑移除 gunicorn
+# waitress==3.0.0 # 迁移到 FastAPI 后，可以考虑移除 waitress
+redis==5.0.1
+rq==2.3.3
+python-dotenv==1.0.1
+structlog==24.1.0
+requests==2.31.0
+dashscope==1.14.0 # DeepSeek API 客户端
 
-# HTTP 请求库 (OpenAI SDK 内部可能使用，显式列出以防万一)
-requests>=2.32.3
+# 新增：OpenAI 库
+openai==1.30.0 # 推荐使用最新版本，这里提供一个示例版本
 
-# 环境变量加载
-python-dotenv>=1.1.0
-
-# OpenAI 兼容 API 客户端 (用于 DashScope)
-openai>=1.0.0
-
-# Redis 队列系统
-rq>=1.0.0
-rq-scheduler>=0.11.0 # 用于 RQ 的定时任务调度器
-
-# Redis 客户端 (推荐安装 hiredis 以提高性能)
-redis[hiredis]>=4.0.0
-
-# 数据验证和序列化
-pydantic>=2.0.0
-
-# Flask API 限流 (包含 Redis 存储后端)
-Flask-Limiter[redis]
-
-# 进程管理工具 (主要用于 Docker 容器内管理 Worker 进程)
-supervisor
-
-# WSGI 服务器 (用于生产环境运行 Flask 应用)
-waitress
+# FastAPI 和 Uvicorn
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+pydantic-settings==2.2.1 # 用于更高级的设置管理，可选

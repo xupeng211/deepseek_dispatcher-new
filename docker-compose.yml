@@ -16,7 +16,7 @@ services:
     volumes:
       - redis_data:/data # 持久化 Redis 数据
 
-  # Web 服务：Flask 应用，提供 API 接口
+  # Web 服务：FastAPI 应用，提供 API 接口
   web:
     build:
       context: . # Dockerfile 的构建上下文是当前目录 (deepseek_dispatcher_new/)
@@ -31,21 +31,26 @@ services:
       - DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL} # 从宿主机的 .env 文件获取
       - MODEL_NAME=${MODEL_NAME}
       - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
-      - MODEL_TOP_P=${MODEL_TOP_P} # <-- 已修正为 MODEL_TOP_P
+      - MODEL_TOP_P=${MODEL_TOP_P}
       - TASK_QUEUE_NAME=${TASK_QUEUE_NAME}
       - LOG_LEVEL=${LOG_LEVEL}
       - LOGS_DIR=/app/logs # 容器内的日志目录
       - RESULTS_DIR=/app/results # 容器内的结果目录
-      - FLASK_HOST=0.0.0.0
+      - FLASK_HOST=0.0.0.0 # 这些 Flask 相关的变量在 FastAPI 中可能不再直接使用，但保留以防万一
       - FLASK_PORT=8000
       - FLASK_DEBUG=${FLASK_DEBUG}
       - FLASK_ENV=${FLASK_ENV}
       - DEFAULT_RATELIMIT=${DEFAULT_RATELIMIT}
+      # 如果您启用了 API 密钥认证，请确保在 .env 中设置 API_KEY
+      # - API_KEY=${API_KEY}
     ports:
       - "8000:8000" # 将宿主机的 8000 端口映射到容器的 8000 端口
     volumes:
-      - ./logs:/app/logs # 将宿主机 logs 目录挂载到容器的 /app/logs，持久化日志
-      - ./results:/app/results # 将宿主机 results 目录挂载到容器的 /app/results，持久化结果
+      - .:/app # 关键：将宿主机当前目录挂载到容器的 /app
+      - ./logs:/app/logs # 确保日志目录仍然挂载，覆盖上面的 /app 挂载
+      - ./results:/app/results # 确保结果目录仍然挂载，覆盖上面的 /app 挂载
+    # 更改 Web 服务的启动命令为 Uvicorn，并启用 --reload
+    command: ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   # Worker 服务：RQ Worker，处理后台任务
   worker:
@@ -62,16 +67,16 @@ services:
       - DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL}
       - MODEL_NAME=${MODEL_NAME}
       - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
-      - MODEL_TOP_P=${MODEL_TOP_P} # <-- 已修正为 MODEL_TOP_P
+      - MODEL_TOP_P=${MODEL_TOP_P}
       - TASK_QUEUE_NAME=${TASK_QUEUE_NAME}
       - LOG_LEVEL=${LOG_LEVEL}
       - LOGS_DIR=/app/logs
       - RESULTS_DIR=/app/results
     volumes:
-      - ./logs:/app/logs # 同样挂载日志目录
-      - ./results:/app/results # 同样挂载结果目录
-    # 最终的生产命令
-    command: ["python", "worker/worker.py"]
+      - .:/app # 关键：将宿主机当前目录挂载到容器的 /app
+      - ./logs:/app/logs # 确保日志目录仍然挂载，覆盖上面的 /app 挂载
+      - ./results:/app/results # 确保结果目录仍然挂载，覆盖上面的 /app/results 挂载
+    command: ["python", "worker/worker.py"] # 保持 worker 命令不变
 
 # 定义数据卷，用于持久化 Redis 数据
 volumes:
