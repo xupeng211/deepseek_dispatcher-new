@@ -22,4 +22,5 @@ pydantic-settings==2.2.1 # 用于更高级的设置管理，可选
 # openai 1.x.x 版本依赖 httpx，并需要其支持 proxies 参数
 # httpx 0.20.0 版本引入了 Client.proxies 属性
 # 为了避免 AttributeError: 'Client' object has no attribute 'proxies'，我们确保其版本足够新
-httpx>=0.30.0
+# **重要：由于当前环境中 httpx>=0.30.0 无法找到，我们将其版本锁定为当前可用的最新版本 0.28.1**
+httpx==0.28.1
