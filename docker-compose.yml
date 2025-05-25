@@ -72,6 +72,9 @@ services:
       - LOG_LEVEL=${LOG_LEVEL}
       - LOGS_DIR=/app/logs
       - RESULTS_DIR=/app/results
+      # 明确清除代理相关的环境变量，以防自动设置
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
     volumes:
       - .:/app # 关键：将宿主机当前目录挂载到容器的 /app
       - ./logs:/app/logs # 确保日志目录仍然挂载，覆盖上面的 /app 挂载
