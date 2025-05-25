@@ -1,4 +1,3 @@
-# ai_executor/executor.py
 import openai # 导入 openai 库，DashScope 兼容 OpenAI API
 import os # 确保导入 os
 from typing import Dict, Any # 确保导入 Dict, Any
@@ -30,6 +29,7 @@ class AIExecutor:
             self.client = openai.OpenAI(
                 api_key=api_key,
                 base_url=base_url,
+                proxies=None  # 显式禁用代理，解决 httpx 自动检测代理的问题
             )
             logger.info("AIExecutor 已初始化，连接到 DashScope API。")
         except Exception as e:
@@ -40,7 +40,7 @@ class AIExecutor:
         """
         生成文本补全。
         Args:
-            messages (list[Dict[str, str]]): 对话消息列表，例如 [{"role": "user", "content": "Hello"}]
+            messages (list[Dict[str, str]]: 对话消息列表，例如 [{"role": "user", "content": "Hello"}]
             **kwargs: 额外的模型参数，如 max_tokens, temperature, top_p, model_name。
         Returns:
             str: 生成的文本。
