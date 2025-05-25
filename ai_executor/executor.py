@@ -25,11 +25,11 @@ class AIExecutor:
 
         try:
             # 初始化 OpenAI 客户端，指向 DashScope API
-            # 确认这里没有 'proxies' 参数
+            # **重要：已移除 'proxies=None'，因为该参数在当前环境下引发 TypeError。**
+            # 如果需要代理，请通过环境变量（如 HTTP_PROXY/HTTPS_PROXY）配置。
             self.client = openai.OpenAI(
                 api_key=api_key,
                 base_url=base_url,
-                proxies=None  # 显式禁用代理，解决 httpx 自动检测代理的问题
             )
             logger.info("AIExecutor 已初始化，连接到 DashScope API。")
         except Exception as e:
