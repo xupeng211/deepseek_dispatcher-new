@@ -2,19 +2,18 @@
 import uuid
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List # 导入 List
 
 from redis import Redis
-from rq import Queue # 保持 Queue 导入不变
+from rq import Queue
 from rq.job import Job
 from rq.exceptions import NoSuchJobError, InvalidJobOperationError
-from rq.worker import Worker # 从 rq.worker 导入 Worker 类
+from rq.worker import Worker
 
 from logger.logger import get_logger
 from config.settings import REDIS_URL, TASK_QUEUE_NAME
 
 # 导入 RQ 任务函数
-# 关键修正：将 process_ai_task 更改为 generate_text_task
 from dispatcher.tasks import generate_text_task
 
 logger = get_logger(__name__)
@@ -24,10 +23,16 @@ class TaskDispatchError(Exception):
     pass
 
 class TaskDispatcher:
-    def __init__(self, redis_url: str = REDIS_URL, queue_name: str = TASK_QUEUE_NAME):
+    def __init__(self, redis_url: str = REDIS_URL, queue_name: str = TASK_QUEUE_NAME) -> None:
+        """
+        初始化 TaskDispatcher。
+        Args:
+            redis_url (str): Redis 连接 URL。
+            queue_name (str): RQ 队列名称。
+        """
         try:
-            self.redis_conn = Redis.from_url(redis_url)
-            self.queue = Queue(name=queue_name, connection=self.redis_conn)
+            self.redis_conn: Redis = Redis.from_url(redis_url)
+            self.queue: Queue = Queue(name=queue_name, connection=self.redis_conn)
             logger.info(f"TaskDispatcher 已初始化，连接到 Redis: {redis_url}, 队列: '{queue_name}'")
         except Exception as e:
             logger.error(f"初始化 TaskDispatcher 失败，无法连接到 Redis: {e}", exc_info=True)
@@ -44,11 +49,9 @@ class TaskDispatcher:
         Raises:
             TaskDispatchError: 任务入队失败时抛出。
         """
-        task_id = str(uuid.uuid4()) # 为每个任务生成一个唯一的 ID
+        task_id: str = str(uuid.uuid4()) # 为每个任务生成一个唯一的 ID
         try:
-            # enqueue 的第一个参数是可调用的函数，后面是其参数
-            # 关键修正：使用 generate_text_task
-            job = self.queue.enqueue(
+            job: Job = self.queue.enqueue(
                 generate_text_task,
                 task_data,
                 trace_id,
@@ -66,12 +69,16 @@ class TaskDispatcher:
     def get_task_status(self, job_id: str) -> Dict[str, Any]:
         """
         获取 RQ 任务的状态。
+        Args:
+            job_id (str): RQ Job ID。
+        Returns:
+            Dict[str, Any]: 包含任务状态、结果、错误等信息的字典。
         """
         try:
-            job = Job.fetch(job_id, connection=self.redis_conn)
-            status = job.get_status()
-            result = job.result if job.is_finished else None
-            error = job.exc_info if job.is_failed else None
+            job: Job = Job.fetch(job_id, connection=self.redis_conn)
+            status: str = job.get_status()
+            result: Optional[Any] = job.result if job.is_finished else None
+            error: Optional[str] = job.exc_info if job.is_failed else None
 
             # 检查任务是否在失败队列中
             if job.is_failed and job_id in self.queue.failed_job_registry:
@@ -88,7 +95,6 @@ class TaskDispatcher:
             # 检查任务是否被调度 (enqueue_at)
             elif job.is_scheduled and job_id in self.queue.scheduled_job_registry:
                 status = "scheduled"
-
 
             logger.debug(f"获取任务 {job_id} 状态: {status}")
             return {
@@ -108,13 +114,17 @@ class TaskDispatcher:
             return {"job_id": job_id, "status": "error", "message": str(e)}
 
     def get_queue_metrics(self) -> Dict[str, Any]:
-        """获取队列的基本指标"""
-        queued_jobs = self.queue.count
-        started_jobs = self.queue.started_job_registry.count
-        finished_jobs = self.queue.finished_job_registry.count
-        failed_jobs = self.queue.failed_job_registry.count
-        scheduled_jobs = self.queue.scheduled_job_registry.count
-        deferred_jobs = self.queue.deferred_job_registry.count
+        """
+        获取队列的基本指标。
+        Returns:
+            Dict[str, Any]: 包含队列指标的字典。
+        """
+        queued_jobs: int = self.queue.count
+        started_jobs: int = self.queue.started_job_registry.count
+        finished_jobs: int = self.queue.finished_job_registry.count
+        failed_jobs: int = self.queue.failed_job_registry.count
+        scheduled_jobs: int = self.queue.scheduled_job_registry.count
+        deferred_jobs: int = self.queue.deferred_job_registry.count
 
         logger.debug("获取队列指标。")
         return {
@@ -132,16 +142,17 @@ class TaskDispatcher:
         """
         获取指定注册表（queued, started, finished, failed, scheduled, deferred）中的任务列表。
         Args:
-            registry_type (str): 注册表类型 ('queued', 'started', 'finished', 'failed', 'scheduled', 'deferred')
-            page (int): 页码
-            per_page (int): 每页数量
+            registry_type (str): 注册表类型 ('queued', 'started', 'finished', 'failed', 'scheduled', 'deferred')。
+            page (int): 页码。
+            per_page (int): 每页数量。
         Returns:
             Dict[str, Any]: 包含任务 ID 列表、总数和分页信息的字典。
         """
         registry = None
+        job_ids: List[str] = []
+        total: int = 0
+
         if registry_type == 'queued':
-            # 注意: RQ 的 get_jobs() 返回的是 Job 对象的列表，不是 Registry
-            # 要获取队列中的 job_id，需要手动遍历
             job_ids = [job.id for job in self.queue.get_jobs(offset=(page - 1) * per_page, length=per_page)]
             total = self.queue.count
         elif registry_type == 'started':
@@ -161,10 +172,10 @@ class TaskDispatcher:
             total = registry.count
             job_ids = registry.get_job_ids((page - 1) * per_page, per_page)
 
-        jobs_info = []
+        jobs_info: List[Dict[str, Any]] = []
         for job_id in job_ids:
             try:
-                job = Job.fetch(job_id, connection=self.redis_conn)
+                job: Job = Job.fetch(job_id, connection=self.redis_conn)
                 jobs_info.append({
                     "job_id": job.id,
                     "status": job.get_status(),
@@ -187,10 +198,13 @@ class TaskDispatcher:
         }
 
     def get_workers_status(self) -> Dict[str, Any]:
-        """获取所有 RQ Worker 的状态和信息"""
-        # 修正：使用导入的 Worker 类来获取所有 Worker
-        workers = Worker.all(connection=self.redis_conn)
-        worker_info = []
+        """
+        获取所有 RQ Worker 的状态和信息。
+        Returns:
+            Dict[str, Any]: 包含 Worker 状态列表和总数的字典。
+        """
+        workers: List[Worker] = Worker.all(connection=self.redis_conn)
+        worker_info: List[Dict[str, Any]] = []
         for worker in workers:
             worker_info.append({
                 "name": worker.name,

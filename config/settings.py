@@ -14,10 +14,10 @@ TASK_QUEUE_NAME = os.getenv("TASK_QUEUE_NAME", "deepseek_tasks")
 # --- 大模型 API 配置 ---
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 DASHSCOPE_BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "qvq-max")
+MODEL_NAME = os.getenv("MODEL_NAME", "qwen-max") # 将 'qvq-max' 修改为 'qwen-max'
 MODEL_PARAMS = {
     "temperature": float(os.getenv("MODEL_TEMPERATURE", 0.7)),
-    "top_p": float(os.getenv("MODEL_TOP_P", 0.8)), # 确保这里是 MODEL_TOP_P
+    "top_p": float(os.getenv("MODEL_TOP_P", 0.8)),
 }
 
 # --- 日志和结果目录配置 ---
@@ -36,7 +36,7 @@ FLASK_ENV = os.getenv("FLASK_ENV", "development")
 # --- 限流配置 (可选) ---
 # 确保这里引用的是 REDIS_URL，并且如果 .env 中没有设置，会使用默认值
 RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", REDIS_URL)
-DEFAULT_RATELIMIT = os.getenv("DEFAULT_RATELIMIT", "1000 per hour") # 确保这里有默认值
+DEFAULT_RATELIMIT = os.getenv("DEFAULT_RATELIMIT", "1000 per hour")
 
 # --- 环境验证 ---
 if not DASHSCOPE_API_KEY:
