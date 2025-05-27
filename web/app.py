@@ -9,7 +9,8 @@ from typing import Optional, Dict, Any, List
 
 # 导入配置
 from config.settings import REDIS_URL, TASK_QUEUE_NAME, LOGS_DIR, RESULTS_DIR, DASHSCOPE_API_KEY, MODEL_NAME, MODEL_PARAMS
-from dispatcher.dispatcher import TaskDispatcher, TaskDispatchError # 导入 TaskDispatcher 类和 TaskDispatchError
+# 修正导入路径：TaskDispatcher 和 TaskDispatchError 现在位于 dispatcher.core.dispatcher 模块中
+from dispatcher.core.dispatcher import TaskDispatcher, TaskDispatchError
 from logger.logger import get_logger # 导入 get_logger 函数
 
 # 设置日志
@@ -137,7 +138,12 @@ async def dispatch_task_route(request_data: GenerateTextRequest,
                 "model_name": request_data.model_name,
             }
         }
-        job_id = task_dispatcher.enqueue_task(task_data, trace_id)
+        # 修正 enqueue_task 的调用方式，明确指定任务类型为 "inference"
+        job_id = task_dispatcher.enqueue_task(
+            task_type="inference", # 与 TASK_REGISTRY 中的键匹配
+            task_data=task_data,
+            trace_id=trace_id
+        )
         # 关键修正：使用 extra 参数传递 job_id 和 trace_id
         logger.info("任务已成功入队", extra={"job_id": job_id, "trace_id": trace_id})
         return EnqueueResponse(
