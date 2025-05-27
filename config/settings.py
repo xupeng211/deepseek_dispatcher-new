@@ -14,7 +14,7 @@ TASK_QUEUE_NAME = os.getenv("TASK_QUEUE_NAME", "deepseek_tasks")
 # --- 大模型 API 配置 ---
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 DASHSCOPE_BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "qwen-max") # 将 'qvq-max' 修改为 'qwen-max'
+MODEL_NAME = os.getenv("MODEL_NAME", "qwen-turbo") # 将 'qvq-max' 修改为 'qwen-max'
 MODEL_PARAMS = {
     "temperature": float(os.getenv("MODEL_TEMPERATURE", 0.7)),
     "top_p": float(os.getenv("MODEL_TOP_P", 0.8)),

@@ -1,7 +1,6 @@
 import openai
 import os
-from typing import Dict, Any, List # 导入 List
-import logging
+from typing import Dict, Any, List, Optional # 导入 Optional
 
 from config.settings import DASHSCOPE_API_KEY, DASHSCOPE_BASE_URL, MODEL_NAME, MODEL_PARAMS
 from logger.logger import get_logger
@@ -29,11 +28,11 @@ class AIExecutor:
 
         try:
             # 初始化 OpenAI 客户端，指向 DashScope API
-            # **强制禁用代理，以避免代理相关的 TypeError 或其他连接问题。**
+            # 移除了 'proxies=None' 参数，因为当前 openai 库版本不接受此参数。
+            # 由于底层网络问题已解决，不再需要在此处显式配置代理。
             self.client: openai.OpenAI = openai.OpenAI(
                 api_key=api_key,
                 base_url=base_url,
-                proxies=None  # 强制禁用代理
             )
             logger.info("AIExecutor 已初始化，连接到 DashScope API。")
         except Exception as e:
@@ -53,14 +52,14 @@ class AIExecutor:
             AIExecutorError: 模型调用失败时抛出。
         """
         model_name: str = kwargs.pop("model_name", MODEL_NAME)
-        
+
         # 从 MODEL_PARAMS 获取默认值，并允许 kwargs 覆盖
         final_model_params: Dict[str, Any] = {
             "max_tokens": kwargs.pop("max_tokens", MODEL_PARAMS.get("max_tokens")),
             "temperature": kwargs.pop("temperature", MODEL_PARAMS.get("temperature")),
             "top_p": kwargs.pop("top_p", MODEL_PARAMS.get("top_p")),
         }
-        
+
         # 移除 None 值的参数，因为有些模型 API 不接受 None 值作为参数
         final_model_params = {k: v for k, v in final_model_params.items() if v is not None}
 
@@ -72,7 +71,7 @@ class AIExecutor:
             # 记录消息内容的前50个字符，避免日志过长
             log_messages_preview: str = messages[0]['content'][:50] + "..." if messages and messages[0]['content'] else "无内容"
             logger.info(f"调用 AI 模型: {model_name}, 消息: {log_messages_preview}, 参数: {final_model_params}")
-            
+
             chat_completion = self.client.chat.completions.create(
                 model=model_name,
                 messages=messages,

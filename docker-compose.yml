@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   redis:
     image: redis:7-alpine
@@ -36,6 +38,17 @@ services:
       - FLASK_DEBUG=${FLASK_DEBUG}
       - FLASK_ENV=${FLASK_ENV}
       - DEFAULT_RATELIMIT=${DEFAULT_RATELIMIT}
+      # 清理代理环境变量，确保不干扰内部网络
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - NO_PROXY=localhost,127.0.0.1,redis,deepseek_redis,deepseek_web
+      - http_proxy=
+      - https_proxy=
+      - no_proxy=localhost,127.0.0.1,redis,deepseek_redis,deepseek_web
+    # 添加 DNS 配置，强制使用可靠的公共 DNS 服务器
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     ports:
       - "8000:8000"
     volumes:
@@ -63,11 +76,17 @@ services:
       - LOG_LEVEL=${LOG_LEVEL}
       - LOGS_DIR=/app/logs
       - RESULTS_DIR=/app/results
+      # 清理代理环境变量，确保不干扰内部网络
       - HTTP_PROXY=
       - HTTPS_PROXY=
+      - NO_PROXY=localhost,127.0.0.1,redis,deepseek_redis,deepseek_web
       - http_proxy=
       - https_proxy=
-      - NO_PROXY=*
+      - no_proxy=localhost,127.0.0.1,redis,deepseek_redis,deepseek_web
+    # 添加 DNS 配置，强制使用可靠的公共 DNS 服务器
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - .:/app
       - ./logs:/app/logs
