@@ -2,7 +2,8 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
-from config.settings import LOG_LEVEL, LOGS_DIR # 注意：这里是 LOGS_DIR
+from config.settings import LOG_LEVEL, LOGS_DIR  # 注意：这里是 LOGS_DIR
+
 
 def get_logger(name="deepseek_dispatcher"):
     """
@@ -32,7 +33,7 @@ def get_logger(name="deepseek_dispatcher"):
         file_handler = RotatingFileHandler(
             log_file_path,
             maxBytes=10 * 1024 * 1024,  # 10 MB
-            backupCount=5,              # 最多保留 5 个备份文件
+            backupCount=5,  # 最多保留 5 个备份文件
             encoding='utf-8'
         )
         file_formatter = logging.Formatter(
@@ -43,9 +44,11 @@ def get_logger(name="deepseek_dispatcher"):
 
     return logger
 
+
 # 在模块加载时初始化一个全局的 logger 实例，方便其他模块直接导入
 # 例如：from logger.logger import main_logger
 main_logger = get_logger("deepseek_dispatcher.main")
+
 
 if __name__ == '__main__':
     # 这是一个简单的测试，确保日志配置正确工作
@@ -57,3 +60,4 @@ if __name__ == '__main__':
         1 / 0
     except ZeroDivisionError:
         test_logger.exception("An exception occurred!")
+

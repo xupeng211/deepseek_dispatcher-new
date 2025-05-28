@@ -1,4 +1,6 @@
+# services/task_store.py
 from services.base import BaseService
+
 
 class InMemoryTaskStore(BaseService):
     def __init__(self):
@@ -9,3 +11,4 @@ class InMemoryTaskStore(BaseService):
 
     def get_result(self, task_id: str):
         return self.store.get(task_id, "无结果")
+

@@ -1,7 +1,8 @@
 # ai_executor/dashscope.py
-import openai # 确保 openai 库已安装
-from ai_executor.base import BaseExecutor # 确保从正确的路径导入
-from ai_executor.exceptions import ModelExecutionError # 确保从正确的路径导入
+import openai  # 确保 openai 库已安装
+from ai_executor.base import BaseExecutor  # 确保从正确的路径导入
+from ai_executor.exceptions import ModelExecutionError  # 确保从正确的路径导入
+
 
 class DashScopeExecutor(BaseExecutor):
     """DashScope 执行器（兼容 OpenAI SDK）"""
@@ -19,7 +20,7 @@ class DashScopeExecutor(BaseExecutor):
             resp = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model=self.model,
-                **self.params # 将预设的参数解包传入
+                **self.params  # 将预设的参数解包传入
             )
             # 假设 resp.choices[0].message.content 总是存在且有效
             # 在实际生产中，可能需要更健壮的检查
@@ -27,8 +28,9 @@ class DashScopeExecutor(BaseExecutor):
                 return resp.choices[0].message.content
             else:
                 raise ModelExecutionError("DashScope API 响应格式不完整或 choices 为空")
-        except openai.APIError as e: # 捕获 OpenAI SDK 特有的 API 错误
+        except openai.APIError as e:  # 捕获 OpenAI SDK 特有的 API 错误
             raise ModelExecutionError(f"DashScope API 调用失败 (OpenAI SDK): {str(e)}")
-        except Exception as e: # 其他所有意外错误
+        except Exception as e:  # 其他所有意外错误
             # 考虑记录原始异常类型 e.__class__.__name__
             raise ModelExecutionError(f"DashScope 执行器发生未知错误: {str(e)}")
+

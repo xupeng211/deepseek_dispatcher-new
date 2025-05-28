@@ -1,8 +1,10 @@
+# dispatcher/core/base.py
 from abc import ABC, abstractmethod
+
 
 class BaseTask(ABC):
     """所有任务的抽象基类，定义通用接口"""
-    
+
     def __init__(self, task_id: str, payload: dict):
         self.task_id = task_id
         self.payload = payload
@@ -19,3 +21,4 @@ class BaseTask(ABC):
             "payload": self.payload,
             "type": self.__class__.__name__
         }
+

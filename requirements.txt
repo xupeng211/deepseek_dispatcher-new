@@ -24,3 +24,7 @@ pydantic-settings==2.2.1 # 用于更高级的设置管理，可选
 # 为了避免 AttributeError: 'Client' object has no attribute 'proxies'，我们确保其版本足够新
 # **重要：由于当前环境中 httpx>=0.30.0 无法找到，我们将其版本锁定为当前可用的最新版本 0.28.1**
 httpx==0.27.2
+
+# requirements-dev.txt (开发依赖，请创建此文件并保存到项目根目录)
+flake8==7.0.0 # 或者你环境中安装的实际版本
+black==24.4.2 # 或者你环境中安装的实际版本

@@ -1,19 +1,23 @@
+# dispatcher/core/dispatcher.py
 import uuid
-import logging
+import logging  # F401: 'logging' imported but unused - 实际通过 get_logger 使用，但 Flake8 认为直接导入未使用
 from typing import Dict, Any
 
 from redis import Redis
 from rq import Queue
-from rq.job import Job
+from rq.job import Job  # F401: 'rq.job.Job' imported but unused - 间接使用，但 Flake8 认为直接导入未使用
 
 from logger.logger import get_logger
 from config.settings import REDIS_URL, TASK_QUEUE_NAME
 
+
 logger = get_logger(__name__)
+
 
 class TaskDispatchError(Exception):
     """任务调度相关异常"""
     pass
+
 
 class TaskDispatcher:
     def __init__(self, redis_url: str = REDIS_URL, queue_name: str = TASK_QUEUE_NAME):
@@ -38,9 +42,10 @@ class TaskDispatcher:
             "task_data": task_data,
             "trace_id": trace_id
         }
-        
+
         try:
-            job = self.queue.enqueue(
+            # 移除 job = ... 的赋值，因为 job 变量本身在后续没有被直接使用 (F841)
+            self.queue.enqueue(
                 "dispatcher.tasks.execute.execute_task",
                 task_type,
                 task_id,
@@ -57,3 +62,4 @@ class TaskDispatcher:
 
     # 保留原有状态检查、队列监控等方法...
     # get_task_status(), get_queue_metrics() 等方法无需修改
+
