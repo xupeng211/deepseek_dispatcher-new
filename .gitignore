@@ -1,23 +1,54 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python/
-env/
-venv/
-.venv/ # 确保包含 .venv/
-.venv_dispatcher_new/ # 确保包含您当前虚拟环境的名称
-*.env
-.env
-.pytest_cache/
-.mypy_cache/
-.vscode/
+# .gitignore for Python Projects (Optimized for deepseek_dispatcher-new)
 
-# Docker
-*.dockerignore
-.docker
-docker-compose.override.yml # 如果您有本地覆盖文件
-*.log
-logs/
-results/
+# 1. Python Virtual Environment and Build Artifacts
+# -------------------------------------------------
+.venv/                  # Standard virtual environment directory
+venv/                   # Another common virtual environment directory name
+env/                    # Yet another common virtual environment directory name
+.venv_dispatcher_new/   # IMPORTANT: Your specific virtual environment directory
+
+# Compiled Python files
+*.pyc
+__pycache__/
+*.pyo                   # Optimized Python bytecode files
+*.pyd                   # Windows-specific dynamic link library for Python
+
+# Distribution / Packaging
+.Python/                # Specific Python installation directory
+build/                  # Build artifacts
+dist/                   # Distribution packages (e.g., wheels, tar.gz)
+*.egg-info/             # Python egg-info directories
+.eggs/                  # Eggs distributions
+
+# 2. IDE and Editor Specific Files
+# -------------------------------
+.idea/                  # JetBrains IDEs (e.g., PyCharm) project files
+.vscode/                # VS Code workspace and user settings (uncomment if you want to share specific configs)
+*.sublime-project       # Sublime Text project files
+*.sublime-workspace     # Sublime Text workspace files
+
+# Operating System generated files
+.DS_Store               # macOS specific hidden file
+Thumbs.db               # Windows specific hidden file
+
+# 3. Environment Variables and Sensitive Data
+# ------------------------------------------
+.env                    # Local environment variables file (very important to ignore for security)
+*.env                   # Catch other .env files like .env.local, .env.development
+
+# 4. Logs, Results, and Output Directories
+# ----------------------------------------
+*.log                   # All log files
+logs/                   # Dedicated logs directory
+results/                # Your project's results directory
+
+# 5. Testing and Coverage
+# -----------------------
+.coverage               # Coverage.py data file
+.pytest_cache/          # pytest cache directory
+htmlcov/                # HTML coverage reports
+
+# 6. Other Caches
+# ---------------
+.mypy_cache/            # MyPy type checking cache
+.black_cache/           # Black formatter cache
