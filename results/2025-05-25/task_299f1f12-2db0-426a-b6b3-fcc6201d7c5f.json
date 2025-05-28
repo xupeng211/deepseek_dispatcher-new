@@ -1,0 +1,17 @@
+{
+    "task_id": "299f1f12-2db0-426a-b6b3-fcc6201d7c5f",
+    "trace_id": "4aa3839d-1188-4c73-95b3-74e45d1227bb",
+    "timestamp": "2025-05-25T14:13:49.301721",
+    "status": "failed",
+    "input_data": {
+        "prompt": "你好，请用中文简单介绍一下你自己。",
+        "model_kwargs": {
+            "max_tokens": 50,
+            "temperature": 0.7,
+            "top_p": 1.0,
+            "model_name": "deepseek-chat"
+        }
+    },
+    "result": null,
+    "error": "AI 模型执行失败: 初始化 AIExecutor 失败: Client.__init__() got an unexpected keyword argument 'proxies'"
+}

@@ -1,0 +1,17 @@
+{
+    "task_id": "3d97f711-37e0-4056-a2c0-be986aaa2c75",
+    "trace_id": "e7f9bef9-31ae-4c09-b399-53f216be1180",
+    "timestamp": "2025-05-25T12:22:05.919203",
+    "status": "failed",
+    "input_data": {
+        "prompt": "请给我写一个关于人工智能未来发展的简短段落",
+        "model_kwargs": {
+            "max_tokens": 100,
+            "temperature": 0.7,
+            "top_p": 0.8,
+            "model_name": "deepseek-chat"
+        }
+    },
+    "result": null,
+    "error": "AI 模型执行失败: DASHSCOPE_API_KEY is not set in environment variables."
+}

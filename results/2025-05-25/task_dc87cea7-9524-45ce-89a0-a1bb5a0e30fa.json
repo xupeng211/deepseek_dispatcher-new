@@ -1,0 +1,17 @@
+{
+    "task_id": "dc87cea7-9524-45ce-89a0-a1bb5a0e30fa",
+    "trace_id": "897243f6-bcda-4201-8494-eb231eeac8b6",
+    "timestamp": "2025-05-25T16:36:02.955494",
+    "status": "failed",
+    "input_data": {
+        "prompt": "你好，请用中文简单介绍一下你自己。",
+        "model_kwargs": {
+            "max_tokens": 50,
+            "temperature": 0.7,
+            "top_p": 1.0,
+            "model_name": "deepseek-chat"
+        }
+    },
+    "result": null,
+    "error": "AI 模型执行失败: AI API 调用失败: Error code: 404 - {'error': {'message': 'The model `deepseek-chat` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'param': None, 'code': 'model_not_found'}, 'request_id': '36ba1136-1f80-9375-bd61-0737f9ccdce4'}"
+}

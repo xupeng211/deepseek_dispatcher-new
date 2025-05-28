@@ -1,0 +1,17 @@
+{
+    "task_id": "9a2fd74f-e5e7-419a-bc73-949b0df69f40",
+    "trace_id": "3e02732f-594f-4f30-a50d-90e10b744693",
+    "timestamp": "2025-05-27T14:54:43.141125",
+    "status": "completed",
+    "input_data": {
+        "prompt": "请用一句话介绍一下中国。",
+        "model_kwargs": {
+            "max_tokens": 100,
+            "temperature": 0.7,
+            "top_p": 0.8,
+            "model_name": "qwen-turbo"
+        }
+    },
+    "result": "中国是一个历史悠久、文化灿烂的国家，拥有广阔的领土和众多人口，是世界第二大经济体，致力于和平发展与全球合作。",
+    "error": null
+}

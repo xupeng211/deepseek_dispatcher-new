@@ -7,7 +7,7 @@ import sys
 # 确保导入了所有必要的模块
 from ai_executor.base import BaseExecutor
 from ai_executor.factory import ExecutorFactory
-from ai_executor.exceptions import ModelExecutionError
+from ai_executor.exceptor import ModelExecutionError
 from ai_executor.deepseek import DeepSeekExecutor # 确保导入了 DeepSeekExecutor 以供可能的测试或上下文
 from ai_executor.dashscope import DashScopeExecutor # 确保导入了 DashScopeExecutor 以供可能的测试或上下文
 

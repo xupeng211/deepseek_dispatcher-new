@@ -1,0 +1,17 @@
+{
+    "task_id": "1bac8388-1483-461e-bfeb-f7bf430d5ddf",
+    "trace_id": "f77542ea-8828-4dcd-9fe8-4ff2f38cd230",
+    "timestamp": "2025-05-25T16:52:01.211961",
+    "status": "completed",
+    "input_data": {
+        "prompt": "你好，请用中文简单介绍一下你自己。",
+        "model_kwargs": {
+            "max_tokens": 50,
+            "temperature": 0.7,
+            "top_p": 1.0,
+            "model_name": "qwen-max"
+        }
+    },
+    "result": "你好！我是Qwen，由阿里云开发的语言模型。我的设计目的是帮助用户生成各种类型的文本，如文章、故事、诗歌、故事等，并且可以回答问题、提供信息和参与对话。无论是创作辅助、知识查询",
+    "error": null
+}

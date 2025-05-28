@@ -2,7 +2,7 @@
 
 from dispatcher.core.base import BaseTask
 from ai_executor.factory import ExecutorFactory
-from ai_executor.exceptions import ModelExecutionError  # 导入您定义的异常类
+from ai_executor.exceptor import ModelExecutionError  # 导入您定义的异常类
 
 
 class InferenceTask(BaseTask):

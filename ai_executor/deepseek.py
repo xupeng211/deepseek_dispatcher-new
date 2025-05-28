@@ -2,7 +2,7 @@
 import requests
 from typing import Optional
 from ai_executor.base import BaseExecutor  # 确保从正确的路径导入
-from ai_executor.exceptions import ModelExecutionError  # 确保从正确的路径导入
+from ai_executor.exceptor import ModelExecutionError  # 确保从正确的路径导入
 
 
 class DeepSeekExecutor(BaseExecutor):

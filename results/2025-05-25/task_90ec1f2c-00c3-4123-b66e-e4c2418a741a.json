@@ -1,0 +1,17 @@
+{
+    "task_id": "90ec1f2c-00c3-4123-b66e-e4c2418a741a",
+    "trace_id": "7bf7ea63-9493-4d2f-9f98-4cc64a7884f1",
+    "timestamp": "2025-05-25T16:09:20.585625",
+    "status": "failed",
+    "input_data": {
+        "prompt": "你好，请用中文简单介绍一下你自己。",
+        "model_kwargs": {
+            "max_tokens": 50,
+            "temperature": 0.7,
+            "top_p": 1.0,
+            "model_name": "deepseek-chat"
+        }
+    },
+    "result": null,
+    "error": "AI 模型执行失败: AI API 调用失败: Error code: 401 - {'error': {'message': 'Incorrect API key provided. ', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_api_key'}, 'request_id': '8d04c787-87af-935b-b71b-b122f6b6319f'}"
+}

@@ -1,0 +1,17 @@
+{
+    "task_id": "fb53d4cd-382f-4942-b366-516a13882fe4",
+    "trace_id": "1d88837d-c92b-42be-a928-f24883b3df8f",
+    "timestamp": "2025-05-27T14:37:49.464758",
+    "status": "failed",
+    "input_data": {
+        "prompt": "请写一个关于未来人工智能的简短诗歌，字数在50字以内。",
+        "model_kwargs": {
+            "max_tokens": 100,
+            "temperature": 0.7,
+            "top_p": 0.8,
+            "model_name": "deepseek-chat"
+        }
+    },
+    "result": null,
+    "error": "AI 模型执行失败: AI API 调用失败: Error code: 404 - {'error': {'message': 'The model `deepseek-chat` does not exist or you do not have access to it.', 'type': 'invalid_request_error', 'param': None, 'code': 'model_not_found'}, 'request_id': '1137d4a0-6491-9cd9-8647-42dfdeecabdb'}"
+}
