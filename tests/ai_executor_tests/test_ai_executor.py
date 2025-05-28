@@ -4,10 +4,12 @@ from unittest.mock import patch, MagicMock
 from io import StringIO
 import sys
 
+# 确保导入了所有必要的模块
 from ai_executor.base import BaseExecutor
 from ai_executor.factory import ExecutorFactory
 from ai_executor.exceptions import ModelExecutionError
-
+from ai_executor.deepseek import DeepSeekExecutor # 确保导入了 DeepSeekExecutor 以供可能的测试或上下文
+from ai_executor.dashscope import DashScopeExecutor # 确保导入了 DashScopeExecutor 以供可能的测试或上下文
 
 class TestAIExecutor(unittest.TestCase):
 
@@ -19,8 +21,12 @@ class TestAIExecutor(unittest.TestCase):
     def tearDown(self):
         # 恢复标准输出
         sys.stdout = self.held_stdout
+        # 清理 StringIO 的内容，避免影响后续测试
+        sys.stdout.seek(0)
+        sys.stdout.truncate(0)
 
-    # 这个测试用例仍然跳过，因为它旨在进行真实的 API 调用，而我们现在专注于单元测试的隔离。
+    # 针对 test_deepseek_executor_success，我将保留您本地的跳过逻辑，
+    # 因为它强调了单元测试的隔离性，避免实际 API 调用。
     def test_deepseek_executor_success(self):
         print("\nSkipping live DeepSeek API test (now handled by mocking in other tests).")
         pass
@@ -85,3 +91,5 @@ class TestAIExecutor(unittest.TestCase):
         mock_dashscope_instance.run.assert_called_once_with(prompt)
         mock_deepseek_instance.run.assert_called_once_with(prompt)
 
+if __name__ == '__main__':
+    unittest.main()
