@@ -18,11 +18,17 @@ COPY . /app
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
-# Supervisor 配置
-COPY supervisor/ /etc/supervisor/conf.d/
+# 修改 Supervisor 配置复制路径
+# 将 supervisord.conf 复制到 /etc/supervisor/supervisord.conf
+COPY supervisor/supervisord.conf /etc/supervisor/supervisord.conf
 
 # 日志目录
-RUN mkdir -p /app/logs /var/log/supervisor
+RUN mkdir -p /app/logs /var/log/supervisor /var/run/supervisor && \
+    chown -R root:root /var/run/supervisor /var/log/supervisor # 确保权限正确
 
-# 启动命令
-CMD ["supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# 复制并赋予启动脚本可执行权限
+COPY scripts/supervisor_test.sh /app/supervisor_test.sh
+RUN chmod +x /app/supervisor_test.sh
+
+# 修改启动命令：使用新的测试脚本
+CMD ["/app/supervisor_test.sh"]
