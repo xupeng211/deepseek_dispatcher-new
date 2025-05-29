@@ -1,0 +1,25 @@
+[flake8]
+# 通常会有 max-line-length = 79 或者其他你自定义的规则
+# ... 其他规则 ...
+
+# 排除虚拟环境、构建目录、Git目录等
+exclude = 
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    env,
+    .venv_dispatcher_new,  # 确保这个被排除
+    .venv_dispatcher_bak,  # 确保这个也被排除
+    build,
+    dist,
+    *.egg-info,
+    .eggs,
+    .mypy_cache,
+    .pytest_cache,
+    .vscode,
+    .idea,
+    .DS_Store
+
+# 如果你还想忽略某些错误代码，例如 E501 行长，可以添加
+# ignore = E501

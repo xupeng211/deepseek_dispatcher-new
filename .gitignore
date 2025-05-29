@@ -1,54 +1,24 @@
-# .gitignore for Python Projects (Optimized for deepseek_dispatcher-new)
+# Python virtual environment
+.venv/
+.venv_*
+venv/
+env/
 
-# 1. Python Virtual Environment and Build Artifacts
-# -------------------------------------------------
-.venv/                  # Standard virtual environment directory
-venv/                   # Another common virtual environment directory name
-env/                    # Yet another common virtual environment directory name
-.venv_dispatcher_new/   # IMPORTANT: Your specific virtual environment directory
+# Logs
+logs/
+*.log
 
-# Compiled Python files
+# Byte-code files
 *.pyc
 __pycache__/
-*.pyo                   # Optimized Python bytecode files
-*.pyd                   # Windows-specific dynamic link library for Python
 
-# Distribution / Packaging
-.Python/                # Specific Python installation directory
-build/                  # Build artifacts
-dist/                   # Distribution packages (e.g., wheels, tar.gz)
-*.egg-info/             # Python egg-info directories
-.eggs/                  # Eggs distributions
+# IDE-specific files (e.g., VS Code)
+.vscode/
 
-# 2. IDE and Editor Specific Files
-# -------------------------------
-.idea/                  # JetBrains IDEs (e.g., PyCharm) project files
-.vscode/                # VS Code workspace and user settings (uncomment if you want to share specific configs)
-*.sublime-project       # Sublime Text project files
-*.sublime-workspace     # Sublime Text workspace files
+# Operating System files
+.DS_Store
+Thumbs.db
 
-# Operating System generated files
-.DS_Store               # macOS specific hidden file
-Thumbs.db               # Windows specific hidden file
-
-# 3. Environment Variables and Sensitive Data
-# ------------------------------------------
-.env                    # Local environment variables file (very important to ignore for security)
-*.env                   # Catch other .env files like .env.local, .env.development
-
-# 4. Logs, Results, and Output Directories
-# ----------------------------------------
-*.log                   # All log files
-logs/                   # Dedicated logs directory
-results/                # Your project's results directory
-
-# 5. Testing and Coverage
-# -----------------------
-.coverage               # Coverage.py data file
-.pytest_cache/          # pytest cache directory
-htmlcov/                # HTML coverage reports
-
-# 6. Other Caches
-# ---------------
-.mypy_cache/            # MyPy type checking cache
-.black_cache/           # Black formatter cache
+# User-specific configuration (like .bashrc copy)
+.bashrc
+.flake8 # 如果你不希望 Flake8 配置被版本控制，但通常这个是会被追踪的，这里暂时先忽略以解决 untracked 问题

@@ -1,5 +1,5 @@
 # ai_executor/factory.py
-from ai_executor.exceptor import ModelExecutionError
+from ai_executor.executor import ModelExecutionError
 from ai_executor.dashscope import DashScopeExecutor
 from ai_executor.deepseek import DeepSeekExecutor
 # 导入你的真实配置，替换原来的 MockSettings

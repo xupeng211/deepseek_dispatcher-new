@@ -1,7 +1,7 @@
 # ai_executor/dashscope.py
 import openai  # 确保 openai 库已安装
 from ai_executor.base import BaseExecutor  # 确保从正确的路径导入
-from ai_executor.exceptor import ModelExecutionError  # 确保从正确的路径导入
+from ai_executor.executor import ModelExecutionError  # 确保从正确的路径导入
 
 
 class DashScopeExecutor(BaseExecutor):
