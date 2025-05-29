@@ -28,4 +28,4 @@ httpx==0.27.2
 # requirements-dev.txt (开发依赖，请创建此文件并保存到项目根目录)
 flake8==7.0.0 # 或者你环境中安装的实际版本
 black==24.4.2 # 或者你环境中安装的实际版本
-pip install rq-dashboard
+rq-dashboard==0.8.2.2
