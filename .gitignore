@@ -1,29 +1,29 @@
-# Python virtual environment
+# Python virtual environments
 .venv/
 .venv_*
 venv/
 env/
 
-# Logs
+# Logs and runtime generated files
 logs/
 *.log
+*.err.log
+*.out.log
 
-# Byte-code and compiled files
+# Python byte-code and compiled files
 *.pyc
 __pycache__/
 
-# IDE-specific files (e.g., VS Code)
+# IDE-specific files (e.g., VS Code, PyCharm)
 .vscode/
+.idea/
 
-# Operating System files
+# Operating System specific files
 .DS_Store
 Thumbs.db
 
-# Environment variables
+# Environment variables - CRITICAL for security, DO NOT COMMIT
 .env
-
-# User-specific configuration (like .bashrc copy)
-.bashrc # 确保这一行存在，以忽略 .bashrc
 
 # Temporary or miscellaneous files from editor/OS/runs
 *.tmp
@@ -32,9 +32,12 @@ Thumbs.db
 .#*
 *.swp
 *.bak
-max_tokens:*
-temperature:*
-top_p:*
-.bashrc
-# Dependencies
-# /requirements.txt # 通常需要追踪，如果不需要追踪则解除注释
+*.sqlite3  # 如果你使用了SQLite数据库，这行也很重要
+
+# Project specific temporary outputs (if any)
+# max_tokens:* # 这看起来不像是标准的gitignore模式，可能是误添加。如果你的项目确实会生成以这些开头的文件，请更精确地指定。
+# temperature:*
+# top_p:*
+
+# User-specific configuration or shell files
+# .bashrc # 通常这个文件不会在项目目录下，如果真的有且不希望被追踪，可以保留。
