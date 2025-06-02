@@ -1,8 +1,9 @@
-# dispatcher/tasks/inference_task.py (推荐存放路径)
+# dispatcher/tasks/inference_task.py
 
 from dispatcher.core.base import BaseTask
 from ai_executor.factory import ExecutorFactory
 from ai_executor.executor import ModelExecutionError  # 导入您定义的异常类
+from typing import Dict, Any # 新增：导入Dict和Any用于execute_task的类型提示
 
 
 class InferenceTask(BaseTask):
@@ -53,3 +54,22 @@ class InferenceTask(BaseTask):
             "status": status  # 根据执行结果返回最终状态
         }
 
+# --- 新增的 execute_task 函数 ---
+def execute_task(task_type: str, job_id: str, payload: Dict[str, Any]):
+    """
+    根据任务类型执行具体的任务。
+    这个函数将被 RQ worker 调用。
+    它负责实例化并运行 InferenceTask。
+    """
+    # 这里假设我们只处理 "inference" 类型的任务
+    if task_type == "inference":
+        # 实例化 InferenceTask，并传递 job_id 和 payload
+        # BaseTask 的 __init__ 预期接收 job_id 和 payload
+        inference_task = InferenceTask(job_id=job_id, payload=payload)
+        task_result = inference_task.run()
+        print(f"任务执行完成 | TaskID: {job_id} | Type: {task_type} | Status: {task_result['status']}")
+        return task_result
+    else:
+        error_msg = f"未知的任务类型: {task_type}"
+        print(f"[ERROR] {error_msg}")
+        return {"task_id": job_id, "status": "failed", "error": error_msg}

@@ -8,7 +8,7 @@ env/
 logs/
 *.log
 
-# Byte-code files
+# Byte-code and compiled files
 *.pyc
 __pycache__/
 
@@ -19,6 +19,22 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# Environment variables
+.env
+
 # User-specific configuration (like .bashrc copy)
+.bashrc # 确保这一行存在，以忽略 .bashrc
+
+# Temporary or miscellaneous files from editor/OS/runs
+*.tmp
+*.temp
+*~
+.#*
+*.swp
+*.bak
+max_tokens:*
+temperature:*
+top_p:*
 .bashrc
-.flake8 # 如果你不希望 Flake8 配置被版本控制，但通常这个是会被追踪的，这里暂时先忽略以解决 untracked 问题
+# Dependencies
+# /requirements.txt # 通常需要追踪，如果不需要追踪则解除注释

@@ -1,97 +1,33 @@
-version: '3.8'
+version: '3.9' # 推荐使用较新的 Compose 文件格式版本
 
 services:
   redis:
-    image: redis:7-alpine
-    container_name: deepseek_redis
+    image: redis:7.2-alpine # 推荐使用带版本号且更轻量的 Alpine 镜像
+    container_name: deepseek_dispatcher-redis # 为 Redis 容器设置明确的名称
     ports:
       - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
     volumes:
-      - redis_data:/data
+      - redis_data:/data # 映射具名卷用于 Redis 数据持久化
+    restart: always
 
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile-web
-    container_name: deepseek_web
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
-      - DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL}
-      - MODEL_NAME=${MODEL_NAME}
-      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
-      - MODEL_TOP_P=${MODEL_TOP_P}
-      - TASK_QUEUE_NAME=${TASK_QUEUE_NAME}
-      - LOG_LEVEL=${LOG_LEVEL}
-      - LOGS_DIR=/app/logs
-      - RESULTS_DIR=/app/results
-      - FLASK_HOST=0.0.0.0
-      - FLASK_PORT=8000
-      - FLASK_DEBUG=${FLASK_DEBUG}
-      - FLASK_ENV=${FLASK_ENV}
-      - DEFAULT_RATELIMIT=${DEFAULT_RATELIMIT}
-      # 清理代理环境变量，确保不干扰内部网络
-      - HTTP_PROXY=
-      - HTTPS_PROXY=
-      - NO_PROXY=localhost,127.0.0.1,redis,deepseek_redis,deepseek_web
-      - http_proxy=
-      - https_proxy=
-      - no_proxy=localhost,127.0.0.1,redis,deepseek_redis,deepseek_web
-    # 添加 DNS 配置，强制使用可靠的公共 DNS 服务器
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
+  dispatcher:
+    build: .
+    image: deepseek-dispatcher:latest # 明确镜像名称
+    container_name: deepseek_dispatcher # 为 Dispatcher 容器设置明确的名称
     ports:
-      - "8000:8000"
+      - "8000:8000" # 映射 FastAPI 端口
     volumes:
-      - .:/app
-      - ./logs:/app/logs
-      - ./results:/app/results
-    command: ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
-
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile-worker
-    container_name: deepseek_worker
-    depends_on:
-      redis:
-        condition: service_healthy
+      - ./logs:/app/logs # 映射本地的 ./logs 目录到容器的 /app/logs 目录
     environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
-      - DASHSCOPE_BASE_URL=${DASHSCOPE_BASE_URL}
-      - MODEL_NAME=${MODEL_NAME}
-      - MODEL_TEMPERATURE=${MODEL_TEMPERATURE}
-      - MODEL_TOP_P=${MODEL_TOP_P}
-      - TASK_QUEUE_NAME=${TASK_QUEUE_NAME}
-      - LOG_LEVEL=${LOG_LEVEL}
-      - LOGS_DIR=/app/logs
-      - RESULTS_DIR=/app/results
-      # 清理代理环境变量，确保不干扰内部网络
-      - HTTP_PROXY=
-      - HTTPS_PROXY=
-      - NO_PROXY=localhost,127.0.0.1,redis,deepseek_redis,deepseek_web
-      - http_proxy=
-      - https_proxy=
-      - no_proxy=localhost,127.0.0.1,redis,deepseek_redis,deepseek_web
-    # 添加 DNS 配置，强制使用可靠的公共 DNS 服务器
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-    volumes:
-      - .:/app
-      - ./logs:/app/logs
-      - ./results:/app/results
-    command: ["python", "worker/worker.py"]
+      # Redis URL 会被所有 Supervisor 管理的程序继承，指向 Redis 容器的明确名称
+      - REDIS_URL=redis://deepseek_dispatcher-redis:6379/0
+      # 大模型 API Key 也在此处设置，会被 Worker 和 FastAPI 继承
+      - DASHSCOPE_API_KEY=你的_DashScope_API_Key_放这里 # <<<< 请替换成你的实际 DashScope API Key
+      - DEEPSEEK_API_KEY=你的_DeepSeek_API_Key_放这里 # <<<< 请替换成你的实际 DeepSeek API Key
+      # ... 其他可能需要的环境变量 ...
+    depends_on:
+      - redis # 确保 redis 服务在 dispatcher 之前启动
+    restart: always
 
 volumes:
-  redis_data:
+  redis_data: {} # 声明一个名为 redis_data 的具名卷，用于 Redis 数据持久化

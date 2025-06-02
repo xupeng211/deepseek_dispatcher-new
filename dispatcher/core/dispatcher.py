@@ -1,4 +1,3 @@
-# dispatcher/core/dispatcher.py
 import uuid
 import logging
 from typing import Dict, Any
@@ -6,7 +5,7 @@ from typing import Dict, Any
 from redis import Redis
 from rq import Queue
 from rq.job import Job
-from rq.worker import Worker # 新增：导入 Worker 类以获取 Worker 状态
+from rq.worker import Worker 
 
 from logger.logger import get_logger
 from config.settings import REDIS_URL, TASK_QUEUE_NAME
@@ -46,7 +45,7 @@ class TaskDispatcher:
 
         try:
             self.queue.enqueue(
-                "dispatcher.tasks.execute.execute_task",
+                "dispatcher.tasks.execute_task",
                 task_type,
                 task_id,
                 payload,
@@ -115,8 +114,6 @@ class TaskDispatcher:
         获取所有 Worker 的状态
         """
         try:
-            # 注意：这里需要导入 rq.worker.Worker
-            # from rq.worker import Worker # 这行已在文件顶部添加
             workers = Worker.all(connection=self.redis_conn)
             worker_info_list = []
             for worker in workers:
