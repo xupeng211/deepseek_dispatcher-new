@@ -1,33 +1,25 @@
+# ~/projects/deepseek_dispatcher-new/web/app.py
+
 import uuid
 from typing import Optional, Dict, Any, List
 
-from fastapi import FastAPI, HTTPException, status, Query
+from fastapi import FastAPI, HTTPException, status, Query, BackgroundTasks
 from pydantic import BaseModel, Field
 from rq.job import Job
+from redis import Redis # 导入 Redis 用于健康检查
 
 # 导入我们统一的日志工具
 from common.logging_utils import get_logger
-from config.settings import (
-    REDIS_URL,
-    TASK_QUEUE_NAME,
-    DASHSCOPE_API_KEY,
-    MODEL_NAME,
-    MODEL_PARAMS,
-    DEEPSEEK_API_KEY,
-    # 导入 Flask 相关的配置，尽管我们用 FastAPI，但这些变量可能还在 settings 中
-    # 确保这些变量在 config/settings.py 中存在且被正确导入
-    FLASK_HOST,
-    FLASK_PORT,
-    FLASK_DEBUG, # 即使这里导入了 FLASK_DEBUG，uvicorn.run() 也不再使用它
-    FLASK_ENV,
-)
+# 导入配置
+from config.settings import settings # 导入 settings 对象
 
 # TaskDispatcher 和 TaskDispatchError 现在从 dispatcher.core.dispatcher 正确导入
 from dispatcher.core.dispatcher import TaskDispatcher, TaskDispatchError
+from dispatcher.tasks.inference_task import InferenceTask # 导入 InferenceTask 类
 
 # 初始化日志，为 FastAPI 应用获取一个 logger
 # 日志将写入到 logs/fastapi_app.log 文件中
-api_logger = get_logger("fastapi_app")
+api_logger = get_logger("fastapi_app", log_dir=settings.LOGS_DIR, level=settings.LOG_LEVEL)
 
 
 # 初始化 FastAPI 应用
@@ -49,232 +41,197 @@ class GenerateTextRequest(BaseModel):
     请求体模型，用于生成文本任务。
     """
     prompt: str = Field(..., min_length=1, description="The prompt for text generation.")
-    max_tokens: int = Field(100, ge=1, le=2048, description="Maximum number of tokens to generate.")
-    temperature: float = Field(0.7, ge=0.0, le=1.0, description="Sampling temperature for text generation.")
-    top_p: float = Field(0.8, ge=0.0, le=1.0, description="Nucleus sampling parameter for text generation.")
-    model_name: Optional[str] = Field(MODEL_NAME, description="The LLM model to use for generation.")
-
-    # 解决 Pydantic 警告，适用于 Pydantic v2+
-    model_config = {
-        'protected_namespaces': ()
-    }
+    # 从 settings 获取默认值，但允许请求中覆盖
+    max_tokens: Optional[int] = Field(settings.MODEL_MAX_TOKENS, description="The maximum number of tokens to generate.")
+    temperature: Optional[float] = Field(settings.MODEL_TEMPERATURE, description="The sampling temperature (0.0 - 1.0). Higher values make output more random.")
+    top_p: Optional[float] = Field(settings.MODEL_TOP_P, description="The nucleus sampling parameter (0.0 - 1.0).")
+    model_name: Optional[str] = Field(settings.MODEL_NAME, description="The specific model name to use for inference.")
+    priority: Optional[str] = Field('default', description="Task priority (high, default, low).")
 
 
 class TaskStatusResponse(BaseModel):
     """
-    任务状态响应模型。
+    响应体模型，用于查询任务状态。
     """
-    job_id: str
-    status: str
-    result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
-    enqueued_at: Optional[str] = None
-    started_at: Optional[str] = None
-    finished_at: Optional[str] = None
+    job_id: str = Field(..., description="The unique ID of the task job.")
+    status: str = Field(..., description="The current status of the task (e.g., queued, started, finished, failed).")
+    result: Optional[str] = Field(None, description="The result of the task, if available.")
+    error: Optional[str] = Field(None, description="Error message, if the task failed.")
 
 
 class EnqueueResponse(BaseModel):
     """
-    任务入队响应模型。
+    响应体模型，用于任务入队成功。
     """
-    message: str
-    job_id: str
-    trace_id: str
+    job_id: str = Field(..., description="The unique ID of the enqueued task job.")
+    status: str = Field(..., description="Status of the enqueue operation (always 'enqueued' if successful).")
 
 
 class QueueMetricsResponse(BaseModel):
     """
-    队列指标响应模型。
+    响应体模型，用于队列指标。
     """
-    queue_name: str
-    queued_jobs: int
-    started_jobs: int
-    finished_jobs: int
-    failed_jobs: int
-    scheduled_jobs: int
-    deferred_jobs: int
-    total_jobs_in_queue: int
+    queued_tasks: Dict[str, int] = Field(..., description="Number of tasks in each queue (high, default, low).")
+    started_tasks: Dict[str, int] = Field(..., description="Number of started tasks for each queue.")
+    failed_tasks: Dict[str, int] = Field(..., description="Number of failed tasks for each queue.")
+    finished_tasks: Dict[str, int] = Field(..., description="Number of finished tasks for each queue.")
 
 
-class JobInfo(BaseModel):
+class WorkerStatus(BaseModel):
     """
-    单个任务信息模型。
+    单个 worker 的状态模型。
     """
-    job_id: str
-    status: str
-    created_at: Optional[str] = None
-    enqueued_at: Optional[str] = None
-    description: Optional[str] = None
+    name: str = Field(..., description="Worker name.")
+    state: str = Field(..., description="Worker state (e.g., busy, idle, suspended).")
+    current_job: Optional[str] = Field(None, description="ID of the job currently being processed by the worker.")
+    successful_jobs: int = Field(..., description="Number of jobs successfully processed by the worker.")
+    failed_jobs: int = Field(..., description="Number of jobs failed by the worker.")
 
 
-class JobsListResponse(BaseModel):
+class AllWorkersStatusResponse(BaseModel):
     """
-    任务列表响应模型。
+    所有 worker 状态的响应模型。
     """
-    registry_type: str
-    total_jobs: int
-    current_page: int
-    per_page: int
-    jobs: List[JobInfo]
+    workers: List[WorkerStatus] = Field(..., description="List of worker statuses.")
+    total_workers: int = Field(..., description="Total number of workers.")
 
 
-class WorkerInfo(BaseModel):
-    """
-    单个 Worker 信息模型。
-    """
-    name: str
-    state: str
-    current_job_id: Optional[str] = None
-    queues: List[str]
-    last_heartbeat: Optional[str] = None
-    pid: Optional[int] = None
-
-
-class WorkersStatusResponse(BaseModel):
-    """
-    Worker 状态响应模型。
-    """
-    workers: List[WorkerInfo]
-    total_workers: int
-
-
-# --- API 端点 ---
-
-@app.post("/api/dispatch-task", response_model=EnqueueResponse, status_code=status.HTTP_202_ACCEPTED)
-async def dispatch_task_route(
-    request_data: GenerateTextRequest,
-    x_trace_id: Optional[str] = Query(None, alias="X-Trace-ID", description="Optional trace ID for the request.")
+# --- FastAPI 路由定义 ---
+@app.post("/generate", response_model=EnqueueResponse, status_code=status.HTTP_202_ACCEPTED)
+async def generate_text(
+    request: GenerateTextRequest, 
+    background_tasks: BackgroundTasks # 引入 background_tasks
 ):
     """
-    HTTP API 接口：接收任务请求并将其放入 RQ 队列。
+    提交一个文本生成任务到队列。
     """
-    trace_id = x_trace_id if x_trace_id else str(uuid.uuid4())
-    # 日志修正：直接在消息中包含 trace_id，而不是使用 extra 参数
-    api_logger.info(f"收到任务调度请求，Trace ID: {trace_id}")
+    api_logger.info(f"收到文本生成请求，prompt 长度: {len(request.prompt)}")
+
+    # 准备传递给 InferenceTask 的 payload
+    task_payload = {
+        "task_data": {
+            "prompt": request.prompt,
+            "model_kwargs": {
+                "max_tokens": request.max_tokens,
+                "temperature": request.temperature,
+                "top_p": request.top_p,
+            }
+        },
+        "model_name": request.model_name # 将 model_name 传递给任务
+    }
 
     try:
-        # 准备 task_data 字典，传递给 TaskDispatcher 的 enqueue_task
-        task_data = {
-            "prompt": request_data.prompt,
-            "model_kwargs": {
-                "max_tokens": request_data.max_tokens,
-                "temperature": request_data.temperature,
-                "top_p": request_data.top_p,
-                "model_name": request_data.model_name,
-            }
-        }
-        # 修正 enqueue_task 的调用方式，明确指定任务类型为 "inference"
+        # 使用 background_tasks 异步执行 enqueue_task，避免阻塞 API 响应
+        # 实际任务函数会是 'dispatcher.tasks.inference_task.execute_task'
+        # TaskDispatcher.enqueue_task 签名：(task_type: str, task_data: Dict[str, Any], priority: str = 'default', trace_id: str = None)
+        # inference_task.execute_task 的签名是 (task_type: str, job_id: str, payload: Dict[str, Any])
+        # 所以我们需要调整一下传递给 enqueue_task 的方式，直接将完整的 task_payload 传入
+        # 并在 worker 端由 execute_task 解析
         job_id = task_dispatcher.enqueue_task(
-            task_type="inference",   # 与 TASK_REGISTRY 中的键匹配
-            task_data=task_data,
-            trace_id=trace_id
+            task_type="inference", # 任务类型
+            task_data=task_payload, # 传递完整的 payload
+            priority=request.priority,
+            trace_id=str(uuid.uuid4()) # 生成一个新的 trace_id
         )
-        # 日志修正：直接在消息中包含 job_id 和 trace_id
-        api_logger.info(f"任务已成功入队，Job ID: {job_id}, Trace ID: {trace_id}")
-        return EnqueueResponse(
-            message="Task enqueued successfully",
-            job_id=job_id,
-            trace_id=trace_id
-        )
+        api_logger.info(f"任务 {job_id} 已成功入队。")
+        return EnqueueResponse(job_id=job_id, status="enqueued")
     except TaskDispatchError as e:
-        # 日志修正：直接在消息中包含 trace_id 和 error 信息
-        api_logger.error(f"调度请求处理失败，Trace ID: {trace_id}: {e}", exc_info=True)
+        api_logger.error(f"任务调度失败: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to enqueue task: {str(e)}"
+            detail=f"Failed to dispatch task: {str(e)}"
         )
     except Exception as e:
-        # 日志修正：直接在消息中包含 trace_id 和 error 信息
-        api_logger.error(f"处理调度请求时发生未知错误，Trace ID: {trace_id}: {e}", exc_info=True)
+        api_logger.critical(f"处理 /generate 请求时发生未知错误: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An unexpected error occurred: {str(e)}"
         )
 
 
-@app.get("/api/task-status/{job_id}", response_model=TaskStatusResponse)
-async def get_task_status_route(job_id: str):
+@app.get("/tasks/{job_id}/status", response_model=TaskStatusResponse)
+async def get_task_status(job_id: str):
     """
-    HTTP API 接口：获取指定 Job ID 的任务状态。
+    获取指定任务的当前状态和结果。
     """
-    # 日志修正：直接在消息中包含 job_id
-    api_logger.info(f"收到查询任务状态请求，Job ID: {job_id}")
+    api_logger.info(f"查询任务状态请求，Job ID: {job_id}")
     try:
         status_info = task_dispatcher.get_task_status(job_id)
-        if status_info.get("status") == "not_found":
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-        
-        # 将 TaskDispatcher 返回的字典直接映射到 Pydantic 模型
-        return TaskStatusResponse(**status_info)
+        api_logger.info(f"任务 {job_id} 状态: {status_info['status']}")
+        return TaskStatusResponse(
+            job_id=job_id,
+            status=status_info.get("status", "unknown"),
+            result=status_info.get("result"),
+            error=status_info.get("error")
+        )
+    except TaskDispatchError as e:
+        api_logger.error(f"获取任务状态失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND if "not found" in str(e).lower() else status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get task status: {str(e)}"
+        )
     except Exception as e:
-        # 日志修正：直接在消息中包含 job_id 和 error 信息
-        api_logger.error(f"查询任务状态失败，Job ID: {job_id}: {e}", exc_info=True)
+        api_logger.critical(f"处理 /tasks/{job_id}/status 请求时发生未知错误: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get task status: {str(e)}"
+            detail=f"An unexpected error occurred: {str(e)}"
         )
 
 
-@app.get("/api/queue-metrics", response_model=QueueMetricsResponse)
-async def get_queue_metrics_route():
+@app.get("/metrics", response_model=QueueMetricsResponse)
+async def get_queue_metrics():
     """
-    HTTP API 接口：获取 RQ 队列的指标概览。
+    获取 RQ 队列的指标（排队中、已开始、已失败、已完成的任务数）。
     """
-    api_logger.info("收到查询队列指标请求。")
+    api_logger.info("获取队列指标请求。")
     try:
         metrics = task_dispatcher.get_queue_metrics()
-        return QueueMetricsResponse(**metrics)
-    except Exception as e:
+        api_logger.info(f"队列指标: {metrics}")
+        return QueueMetricsResponse(
+            queued_tasks=metrics.get("queued_tasks", {}),
+            started_tasks=metrics.get("started_tasks", {}),
+            failed_tasks=metrics.get("failed_tasks", {}),
+            finished_tasks=metrics.get("finished_tasks", {})
+        )
+    except TaskDispatchError as e:
         api_logger.error(f"获取队列指标失败: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get queue metrics: {str(e)}"
         )
-
-
-@app.get("/api/queue-jobs/{registry_type}", response_model=JobsListResponse)
-async def get_queue_jobs_route(
-    registry_type: str,
-    page: int = Query(1, ge=1, description="Page number for job list."),
-    per_page: int = Query(20, ge=1, le=100, description="Number of jobs per page.")
-):
-    """
-    HTTP API 接口：获取特定注册表（queued, started, finished, failed, scheduled, deferred）中的任务列表。
-    """
-    if registry_type not in ['queued', 'started', 'finished', 'failed', 'scheduled', 'deferred']:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid registry_type. Must be one of: 'queued', 'started', 'finished', 'failed', 'scheduled', 'deferred'."
-        )
-
-    # 日志修正：直接在消息中包含相关参数
-    api_logger.info(f"收到查询 {registry_type} 队列任务列表请求，页码: {page}, 每页数量: {per_page}")
-    try:
-        jobs_list = task_dispatcher.get_jobs_in_registry(registry_type, page, per_page)
-        return JobsListResponse(**jobs_list)
     except Exception as e:
-        # 日志修正：直接在消息中包含 registry_type 和 error 信息
-        api_logger.error(f"获取 {registry_type} 队列任务列表失败: {e}", exc_info=True)
+        api_logger.critical(f"处理 /metrics 请求时发生未知错误: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get jobs from {registry_type} registry: {str(e)}"
+            detail=f"An unexpected error occurred: {str(e)}"
         )
 
 
-@app.get("/api/workers-status", response_model=WorkersStatusResponse)
-async def get_workers_status_route():
+@app.get("/workers/status", response_model=AllWorkersStatusResponse)
+async def get_workers_status():
     """
-    HTTP API 接口：获取所有 RQ Worker 的状态。
+    获取所有 RQ worker 的状态。
     """
-    api_logger.info("收到查询 Worker 状态请求。")
+    api_logger.info("获取 worker 状态请求。")
     try:
-        workers_status = task_dispatcher.get_workers_status()
-        return WorkersStatusResponse(**workers_status)
-    except Exception as e:
-        api_logger.error(f"获取 Worker 状态失败: {e}", exc_info=True)
+        workers_info = task_dispatcher.get_workers_status()
+        api_logger.info(f"Worker 状态: {workers_info}")
+        workers_list = [WorkerStatus(**w) for w in workers_info.get("workers", [])]
+        return AllWorkersStatusResponse(
+            workers=workers_list,
+            total_workers=workers_info.get("total_workers", 0)
+        )
+    except TaskDispatchError as e:
+        api_logger.error(f"获取 worker 状态失败: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get worker status: {str(e)}"
+        )
+    except Exception as e:
+        api_logger.critical(f"处理 /workers/status 请求时发生未知错误: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {str(e)}"
         )
 
 
@@ -286,7 +243,8 @@ async def health_check():
     api_logger.info("Health check requested.")
     try:
         # 尝试 ping Redis 连接以确保其可用
-        task_dispatcher.redis_conn.ping()
+        redis_conn = Redis.from_url(settings.REDIS_URL) # 从 settings 获取 Redis URL
+        redis_conn.ping()
         return {"status": "healthy", "redis_connection": "ok"}
     except Exception as e:
         api_logger.error(f"Health check failed: Redis connection error: {e}", exc_info=True)
@@ -312,11 +270,9 @@ async def shutdown_event():
         api_logger.info("Redis connection closed.")
 
 
-# 如果直接运行此文件，则启动 Uvicorn 服务器
+# 如果直接运行此文件 (例如使用 `python app.py`)，则会启动 Uvicorn 服务器
 if __name__ == "__main__":
     import uvicorn
-    # 确保 FLASK_HOST 和 FLASK_PORT 在 config.settings 中有定义并被正确导入
-    # 否则这里会报错。如果它们是 FastAPI 独有的，可以考虑在 settings 中更名为 API_HOST/API_PORT
-    api_logger.info(f"启动 Uvicorn 服务器在 {FLASK_HOST}:{FLASK_PORT}...")
-    # !!! 关键修改: 移除 debug=FLASK_DEBUG 参数 !!!
-    uvicorn.run(app, host=FLASK_HOST, port=FLASK_PORT) # 或者 uvicorn.run(app, host=FLASK_HOST, port=FLASK_PORT, reload=True)
+    # 从 settings 获取 host 和 port
+    uvicorn.run(app, host=settings.FLASK_HOST, port=settings.FLASK_PORT, debug=settings.FLASK_DEBUG)
+

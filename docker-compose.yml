@@ -1,17 +1,25 @@
-version: '3.9' # 推荐使用较新的 Compose 文件格式版本
+# ~/projects/deepseek_dispatcher-new/docker-compose.yml
 
+# version: '3.9' # <<<< 这一行已经删除，不再需要
 services:
   redis:
-    image: redis:7.2-alpine # 推荐使用带版本号且更轻量的 Alpine 镜像
-    container_name: deepseek_dispatcher-redis # 为 Redis 容器设置明确的名称
+    # 直接使用本地的 Redis 镜像名，不再需要远程仓库地址
+    image: redis:latest
+    container_name: deepseek_dispatcher-redis
     ports:
       - "6379:6379"
+    command: redis-server --appendonly yes
     volumes:
-      - redis_data:/data # 映射具名卷用于 Redis 数据持久化
+      - redis_data:/data
     restart: always
 
   dispatcher:
-    build: .
+    # 构建时，因为基础镜像已在本地，所以不再需要传递 BASE_IMAGE 参数
+    build:
+      context: .
+      # 移除 args 参数，因为基础镜像将从本地加载
+      # args:
+      #   BASE_IMAGE: mirror.baidu.com/library/python:3.12-slim # 示例：注释掉之前的远程源
     image: deepseek-dispatcher:latest # 明确镜像名称
     container_name: deepseek_dispatcher # 为 Dispatcher 容器设置明确的名称
     ports:
@@ -21,9 +29,9 @@ services:
     environment:
       # Redis URL 会被所有 Supervisor 管理的程序继承，指向 Redis 容器的明确名称
       - REDIS_URL=redis://deepseek_dispatcher-redis:6379/0
-      # 大模型 API Key 也在此处设置，会被 Worker 和 FastAPI 继承
-      - DASHSCOPE_API_KEY=你的_DashScope_API_Key_放这里 # <<<< 请替换成你的实际 DashScope API Key
-      - DEEPSEEK_API_KEY=你的_DeepSeek_API_Key_放这里 # <<<< 请替换成你的实际 DeepSeek API Key
+      # 大模型 API Key 等环境变量，直接从宿主机的 .env 文件加载
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY} # 引用 .env 文件中的变量
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}   # 引用 .env 文件中的变量
       # ... 其他可能需要的环境变量 ...
     depends_on:
       - redis # 确保 redis 服务在 dispatcher 之前启动

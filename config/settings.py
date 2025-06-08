@@ -1,52 +1,111 @@
-# config/settings.py
-import os
-from dotenv import load_dotenv
+# ~/projects/deepseek_dispatcher-new/config/settings.py
 
-# 加载 .env 文件中的环境变量
-load_dotenv()
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional, List, Dict, Any
 
-# --- Redis 配置 ---
-# REDIS_BROKER_URL 和 REDIS_BACKEND_URL 统一使用 REDIS_URL
-# 修改为直接读取 REDIS_URL 环境变量
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-TASK_QUEUE_NAME = os.getenv("TASK_QUEUE_NAME", "deepseek_tasks")
+# 使用 pydantic-settings 替代 pydantic.BaseSettings (Pydantic v2+)
+# SettingsConfigDict 用于配置设置来源
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file='.env',         # 从 .env 文件加载环境变量
+        env_file_encoding='utf-8',
+        extra='ignore'           # 忽略 .env 中未在类中定义的额外变量
+    )
 
-# --- 大模型 API 配置 ---
-DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
-DASHSCOPE_BASE_URL = os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "qwen-turbo")  # 确保这个默认值与 .env 期望的匹配
-MODEL_PARAMS = {
-    "temperature": float(os.getenv("MODEL_TEMPERATURE", 0.7)),  # 确保这个默认值与 .env 期望的匹配
-    "top_p": float(os.getenv("MODEL_TOP_P", 0.8)),  # 确保这个默认值与 .env 期望的匹配
-}
+    # --- Redis 配置 ---
+    REDIS_URL: str = "redis://localhost:6379/0" # Redis 连接 URL，默认值
+    TASK_QUEUE_NAME: str = "deepseek_tasks"     # RQ 队列名称，默认值
 
-# 新增 DeepSeek API Key 的读取
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+    # --- 大模型 API 配置 ---
+    DASHSCOPE_API_KEY: Optional[str] = None # DashScope API Key
+    DASHSCOPE_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1" # DashScope API Base URL
+    DEEPSEEK_API_KEY: Optional[str] = None  # DeepSeek API Key
 
-# --- 日志和结果目录配置 ---
-LOGS_DIR = os.getenv("LOGS_DIR", "logs")
-RESULTS_DIR = os.getenv("RESULTS_DIR", "results")
+    # --- 模型相关配置 ---
+    MODEL_NAME: str = "deepseek-chat" # 默认模型名称 (您原始文件是 qwen-turbo，这里我根据 deepseek 项目名改为 deepseek-chat)
+    # MODEL_PARAMS 可以在这里定义默认值，如果环境变量中没有，则使用此默认值
+    # 注意：Pydantic 会尝试将环境变量字符串解析为正确的类型
+    MODEL_TEMPERATURE: float = 0.7
+    MODEL_TOP_P: float = 0.8
+    MODEL_MAX_TOKENS: int = 100 # 新增此行
+    # 如果您的 MODEL_PARAMS 结构是固定的，可以这样定义，或者在代码中使用这些单独的字段组合
+    # MODEL_PARAMS: Dict[str, Any] = {
+    #     "temperature": 0.7,
+    #     "top_p": 0.8,
+    #     "max_tokens": 100 # 这是一个新的参数，如果需要请在 .env 中设置
+    # }
 
-# --- 日志级别配置 ---
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+    # --- 日志和结果目录配置 ---
+    LOGS_DIR: str = "logs"     # 日志文件目录
+    RESULTS_DIR: str = "results" # 结果文件目录
 
-# --- Flask Web 应用配置 ---
-FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
-FLASK_PORT = int(os.getenv("FLASK_PORT", 8000))
-FLASK_DEBUG = os.getenv("FLASK_DEBUG", "False").lower() == "true"
-FLASK_ENV = os.getenv("FLASK_ENV", "development")
+    # --- 日志级别配置 ---
+    LOG_LEVEL: str = "INFO" # 日志级别 (e.g., INFO, DEBUG, WARNING, ERROR)
 
-# --- 限流配置 (可选) ---
-# 确保这里引用的是 REDIS_URL，并且如果 .env 中没有设置，会使用默认值
-RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", REDIS_URL)
-# 注意：这个默认值 "1000 per hour" 与你 .env 建议的 "100/minute" 不同。
-# 请根据你的实际需求决定是保持此默认值，还是修改为 "100/minute"。
-DEFAULT_RATELIMIT = os.getenv("DEFAULT_RATELIMIT", "1000 per hour")
+    # --- FastAPI/Uvicorn 服务器配置 ---
+    FLASK_HOST: str = "0.0.0.0" # 监听地址
+    FLASK_PORT: int = 8000      # 监听端口
+    FLASK_DEBUG: bool = False   # 是否开启调试模式 (Pydantic 会自动将 "true"/"false" 转换为布尔值)
+    FLASK_ENV: str = "development" # 运行环境 (development, production等)
 
-# --- 环境验证 ---
-if not DASHSCOPE_API_KEY:
-    print("警告: DASHSCOPE_API_KEY 未设置。大模型 API 调用可能失败。")
-if not DEEPSEEK_API_KEY:  # 新增 DeepSeek API Key 的警告
-    print("警告: DEEPSEEK_API_KEY 未设置。DeepSeek 模型 API 调用可能失败。")
-if not REDIS_URL:
-    raise ValueError("REDIS_URL 环境变量是必需的，请在 .env 文件中设置。")
+    # --- 限流配置 ---
+    # RATELIMIT_STORAGE_URI 默认值可以指向 REDIS_URL
+    RATELIMIT_STORAGE_URI: str = "redis://localhost:6379/0" # 限流存储 URI，默认指向 Redis URL
+    DEFAULT_RATELIMIT: str = "1000 per hour" # 默认限流速率
+
+    # --- 告警配置 (对应 common/alert_utils.py) ---
+    ENABLE_ALERT: bool = False # 是否启用告警，默认禁用
+    SMTP_SERVER: Optional[str] = None # SMTP 服务器地址
+    SMTP_PORT: int = 465 # SMTP 端口，默认 SSL 端口
+    EMAIL_USER: Optional[str] = None # 发件人邮箱
+    EMAIL_PASS: Optional[str] = None # 发件人邮箱密码或授权码
+    ALERT_EMAIL: Optional[str] = None # 告警接收邮箱
+    DINGTALK_WEBHOOK: Optional[str] = None # 钉钉机器人 Webhook URL
+
+    # --- Flask Secret Key (如果您的项目未来会引入 Flask Session 或其他需要密钥的功能) ---
+    FLASK_SECRET_KEY: Optional[str] = None # Flask 应用的密钥
+
+    # --- RQ 任务参数配置（用于 dispatcher/core/dispatcher.py）---
+    TASK_RESULT_TTL: int = 86400 # 任务结果在 Redis 中保留的时长（秒），默认 1 天
+    TASK_FAILURE_TTL: int = 604800 # 失败任务结果在 Redis 中保留的时长（秒），默认 7 天
+    TASK_JOB_TIMEOUT: int = 300 # 任务执行超时时间（秒），默认 5 分钟
+
+    # --- 环境变量验证 (Pydantic 的验证机制) ---
+    # Pydantic 默认会检查非 Optional 的字段。
+    # 对于 Optional 字段，如果未设置，它们将为 None。
+    # 如果您希望它必须在 .env 中设置，可以移除默认值，并让 Pydantic 强制检查
+    # 例如：REDIS_URL: str # 这样如果没有设置，Pydantic 会抛出 ValidationError
+
+# 创建 Settings 类的实例，这将自动从环境变量和 .env 文件加载配置
+settings = Settings()
+
+# 示例用法 (仅用于测试)
+if __name__ == '__main__':
+    print("--- 当前配置 ---")
+    print(f"Redis URL: {settings.REDIS_URL}")
+    print(f"Task Queue Name: {settings.TASK_QUEUE_NAME}")
+    print(f"DashScope API Key: {'*' * len(settings.DASHSCOPE_API_KEY) if settings.DASHSCOPE_API_KEY else '未设置'}")
+    print(f"DashScope Base URL: {settings.DASHSCOPE_BASE_URL}")
+    print(f"DeepSeek API Key: {'*' * len(settings.DEEPSEEK_API_KEY) if settings.DEEPSEEK_API_KEY else '未设置'}")
+    print(f"Model Name: {settings.MODEL_NAME}")
+    print(f"Model Temperature: {settings.MODEL_TEMPERATURE}")
+    print(f"Model Top P: {settings.MODEL_TOP_P}")
+    print(f"Model Max Tokens: {settings.MODEL_MAX_TOKENS}") # New line
+    print(f"Logs Directory: {settings.LOGS_DIR}")
+    print(f"Results Directory: {settings.RESULTS_DIR}")
+    print(f"Log Level: {settings.LOG_LEVEL}")
+    print(f"FastAPI Host: {settings.FLASK_HOST}")
+    print(f"FastAPI Port: {settings.FLASK_PORT}")
+    print(f"FastAPI Debug: {settings.FLASK_DEBUG}")
+    print(f"FastAPI Env: {settings.FLASK_ENV}")
+    print(f"Ratelimit Storage URI: {settings.RATELIMIT_STORAGE_URI}")
+    print(f"Default Ratelimit: {settings.DEFAULT_RATELIMIT}")
+    print(f"启用告警: {settings.ENABLE_ALERT}")
+    print(f"SMTP Server: {settings.SMTP_SERVER}")
+    print(f"Alert Email: {settings.ALERT_EMAIL}")
+    print(f"DingTalk Webhook: {'*' * len(settings.DINGTALK_WEBHOOK) if settings.DINGTALK_WEBHOOK else '未设置'}")
+    print(f"FLASK_SECRET_KEY: {'*' * len(settings.FLASK_SECRET_KEY) if settings.FLASK_SECRET_KEY else '未设置'}")
+    print(f"Task Result TTL: {settings.TASK_RESULT_TTL}")
+    print(f"Task Failure TTL: {settings.TASK_FAILURE_TTL}")
+    print(f"Task Job Timeout: {settings.TASK_JOB_TIMEOUT}")
+

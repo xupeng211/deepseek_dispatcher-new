@@ -2,7 +2,10 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
-from config.settings import LOG_LEVEL, LOGS_DIR  # 注意：这里是 LOGS_DIR
+from pathlib import Path # 导入 Path 模块，用于处理文件路径和创建目录
+
+# 从 config.settings 导入 settings 对象，而不是直接导入 LOG_LEVEL 和 LOGS_DIR
+from config.settings import settings
 
 
 def get_logger(name="deepseek_dispatcher"):
@@ -15,11 +18,14 @@ def get_logger(name="deepseek_dispatcher"):
 
     # 避免重复添加 handlers
     if not logger.handlers:
-        logger.setLevel(LOG_LEVEL)
+        # 从 settings 对象获取 LOG_LEVEL
+        logger.setLevel(settings.LOG_LEVEL)
 
         # 确保日志目录存在
-        os.makedirs(LOGS_DIR, exist_ok=True)
-        log_file_path = os.path.join(LOGS_DIR, "app.log")
+        # 从 settings 对象获取 LOGS_DIR，并使用 Path 对象进行操作
+        log_dir_path = Path(settings.LOGS_DIR)
+        log_dir_path.mkdir(parents=True, exist_ok=True) # 使用 Path.mkdir 创建目录
+        log_file_path = log_dir_path / "app.log" # 使用 Path 对象拼接路径
 
         # Console Handler (控制台输出)
         console_handler = logging.StreamHandler()
@@ -60,4 +66,3 @@ if __name__ == '__main__':
         1 / 0
     except ZeroDivisionError:
         test_logger.exception("An exception occurred!")
-

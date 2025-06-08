@@ -1,18 +1,22 @@
-# dispatcher/queues/queue_config.py
+# ~/projects/deepseek_dispatcher-new/dispatcher/queues/queue_config.py
 
-from rq import Queue
 from redis import Redis
+from rq import Queue
 
-redis_conn = Redis()
+# 引入配置
+from config.settings import settings
 
-# 定义多级队列
-high_priority_queue = Queue('high', connection=redis_conn)
-default_queue = Queue('default', connection=redis_conn)
-low_priority_queue = Queue('low', connection=redis_conn)
+# 初始化 Redis 连接
+# 从 settings.REDIS_URL 获取 Redis 连接字符串
+redis_conn = Redis.from_url(settings.REDIS_URL)
 
-# 队列注册表
+# 定义不同优先级的 RQ 队列
+# 这些队列将共享同一个 Redis 连接
 QUEUE_MAP = {
-    'high': high_priority_queue,
-    'default': default_queue,
-    'low': low_priority_queue,
+    'high': Queue('high', connection=redis_conn),
+    'default': Queue('default', connection=redis_conn),
+    'low': Queue('low', connection=redis_conn),
 }
+
+# 可以在这里添加其他队列相关的配置，例如：
+# QUEUE_NAMES = ['high', 'default', 'low']
