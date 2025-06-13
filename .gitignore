@@ -32,9 +32,12 @@ Thumbs.db
 .#*
 *.swp
 *.bak
-*.sqlite3  # 如果你使用了SQLite数据库，这行也很重要
+*.sqlite3  # 如果你使用了SQLite数据库，这行也很重要
 
 # Project specific temporary outputs (if any)
+# 添加 Docker 镜像导出文件，它们通常过大不应被 Git 跟踪
+redis.tar
+python.tar
 # max_tokens:* # 这看起来不像是标准的gitignore模式，可能是误添加。如果你的项目确实会生成以这些开头的文件，请更精确地指定。
 # temperature:*
 # top_p:*
