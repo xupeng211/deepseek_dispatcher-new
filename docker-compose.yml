@@ -1,10 +1,11 @@
-# ~/projects/deepseek_dispatcher-new/docker-compose.yml
+# ~/projects-native/deepseek_dispatcher-new/docker-compose.yml
 
 # version: '3.9' # <<<< 这一行已经删除，不再需要
 services:
   redis:
     # 直接使用本地的 Redis 镜像名，不再需要远程仓库地址
-    image: redis:latest
+    # 更改为自定义的本地标签，确保 Docker 不会尝试从远程仓库拉取
+    image: my-local-redis:latest
     container_name: deepseek_dispatcher-redis
     ports:
       - "6379:6379"
@@ -36,6 +37,9 @@ services:
     depends_on:
       - redis # 确保 redis 服务在 dispatcher 之前启动
     restart: always
+    # 修正：在启动 supervisord 之前，明确使用 python3 执行等待 Redis 的脚本，并增加额外延迟
+    command: >
+      sh -c "python3 /usr/local/bin/wait_for_redis.py && sleep 3 && supervisord -n -c /etc/supervisor/supervisord.conf"
 
 volumes:
   redis_data: {} # 声明一个名为 redis_data 的具名卷，用于 Redis 数据持久化

@@ -15,7 +15,10 @@ from config.settings import settings # 导入 settings 对象
 
 # TaskDispatcher 和 TaskDispatchError 现在从 dispatcher.core.dispatcher 正确导入
 from dispatcher.core.dispatcher import TaskDispatcher, TaskDispatchError
-from dispatcher.tasks.inference_task import InferenceTask # 导入 InferenceTask 类
+# 导入 task_wrapper 和 TaskFactory
+from dispatcher.tasks.base_task import task_wrapper
+from dispatcher.tasks.factory import TaskFactory
+
 
 # 初始化日志，为 FastAPI 应用获取一个 logger
 # 日志将写入到 logs/fastapi_app.log 文件中
@@ -32,7 +35,12 @@ app = FastAPI(
 # 初始化 TaskDispatcher 实例
 # 建议在应用启动时初始化一次，而不是每个请求都创建新实例
 # 这样可以重用 Redis 连接池等资源
-task_dispatcher = TaskDispatcher()
+task_dispatcher = TaskDispatcher(
+    redis_url=settings.REDIS_URL, # 使用 settings 中的 Redis URL
+    queue_name=settings.TASK_QUEUE_NAME # 使用 settings 中的队列名称
+)
+# 初始化 TaskFactory 实例
+task_factory = TaskFactory()
 
 
 # --- Pydantic 模型用于请求和响应验证 ---
@@ -47,6 +55,8 @@ class GenerateTextRequest(BaseModel):
     top_p: Optional[float] = Field(settings.MODEL_TOP_P, description="The nucleus sampling parameter (0.0 - 1.0).")
     model_name: Optional[str] = Field(settings.MODEL_NAME, description="The specific model name to use for inference.")
     priority: Optional[str] = Field('default', description="Task priority (high, default, low).")
+    # 新增：用于测试任务失败的标志。默认值为 False。
+    should_fail_for_test: Optional[bool] = Field(False, description="Set to true to force this task to fail for testing retry and alert.")
 
 
 class TaskStatusResponse(BaseModel):
@@ -99,7 +109,7 @@ class AllWorkersStatusResponse(BaseModel):
 # --- FastAPI 路由定义 ---
 @app.post("/generate", response_model=EnqueueResponse, status_code=status.HTTP_202_ACCEPTED)
 async def generate_text(
-    request: GenerateTextRequest, 
+    request: GenerateTextRequest,
     background_tasks: BackgroundTasks # 引入 background_tasks
 ):
     """
@@ -107,34 +117,30 @@ async def generate_text(
     """
     api_logger.info(f"收到文本生成请求，prompt 长度: {len(request.prompt)}")
 
-    # 准备传递给 InferenceTask 的 payload
-    task_payload = {
-        "task_data": {
-            "prompt": request.prompt,
-            "model_kwargs": {
-                "max_tokens": request.max_tokens,
-                "temperature": request.temperature,
-                "top_p": request.top_p,
-            }
+    # 准备传递给 TaskDispatcher 的 task_data
+    # 这将作为 task_details['payload'] 传递给 execute 方法
+    task_data_for_inference_task = {
+        "prompt": request.prompt,
+        # 修正：直接访问 request.should_fail_for_test，因为已经在 Pydantic 模型中定义
+        "should_fail_for_test": request.should_fail_for_test,
+        "model_kwargs": {
+            "max_tokens": request.max_tokens,
+            "temperature": request.temperature,
+            "top_p": request.top_p,
         },
         "model_name": request.model_name # 将 model_name 传递给任务
     }
 
     try:
-        # 使用 background_tasks 异步执行 enqueue_task，避免阻塞 API 响应
-        # 实际任务函数会是 'dispatcher.tasks.inference_task.execute_task'
-        # TaskDispatcher.enqueue_task 签名：(task_type: str, task_data: Dict[str, Any], priority: str = 'default', trace_id: str = None)
-        # inference_task.execute_task 的签名是 (task_type: str, job_id: str, payload: Dict[str, Any])
-        # 所以我们需要调整一下传递给 enqueue_task 的方式，直接将完整的 task_payload 传入
-        # 并在 worker 端由 execute_task 解析
-        job_id = task_dispatcher.enqueue_task(
-            task_type="inference", # 任务类型
-            task_data=task_payload, # 传递完整的 payload
+        # 修正：将 enqueue_task 修改为 dispatch
+        job = task_dispatcher.dispatch(
+            task_callable=task_factory.get_task_callable("inference_task"),   # 任务类型，与 TaskFactory 中的注册键一致
+            payload=task_data_for_inference_task,  # 传递完整的 payload
             priority=request.priority,
-            trace_id=str(uuid.uuid4()) # 生成一个新的 trace_id
+            job_id=str(uuid.uuid4()) # 生成一个新的 job_id
         )
-        api_logger.info(f"任务 {job_id} 已成功入队。")
-        return EnqueueResponse(job_id=job_id, status="enqueued")
+        api_logger.info(f"任务 {job.id} 已成功入队。")
+        return EnqueueResponse(job_id=job.id, status="enqueued")
     except TaskDispatchError as e:
         api_logger.error(f"任务调度失败: {e}", exc_info=True)
         raise HTTPException(
@@ -187,11 +193,13 @@ async def get_queue_metrics():
     try:
         metrics = task_dispatcher.get_queue_metrics()
         api_logger.info(f"队列指标: {metrics}")
+        # 注意：这里返回的 metrics 结构应该匹配 QueueMetricsResponse 的定义
+        # 如果 metrics 是平铺的，需要调整 Pydantic 模型或这里进行映射
         return QueueMetricsResponse(
-            queued_tasks=metrics.get("queued_tasks", {}),
-            started_tasks=metrics.get("started_tasks", {}),
-            failed_tasks=metrics.get("failed_tasks", {}),
-            finished_tasks=metrics.get("finished_tasks", {})
+            queued_tasks={q_name: m['queued_jobs'] for q_name, m in metrics.items()},
+            started_tasks={q_name: m['started_jobs'] for q_name, m in metrics.items()},
+            failed_tasks={q_name: m['failed_jobs'] for q_name, m in metrics.items()},
+            finished_tasks={q_name: m['finished_jobs'] for q_name, m in metrics.items()}
         )
     except TaskDispatchError as e:
         api_logger.error(f"获取队列指标失败: {e}", exc_info=True)
@@ -259,15 +267,17 @@ async def health_check():
 async def startup_event():
     api_logger.info("FastAPI application starting up.")
 
-
 @app.on_event("shutdown")
 async def shutdown_event():
     api_logger.info("FastAPI application shutting down.")
     # 可以在这里添加应用关闭时的清理逻辑
     # 例如，关闭 Redis 连接 (如果 TaskDispatcher 内部没有自动处理)
     if hasattr(task_dispatcher, 'redis_conn') and task_dispatcher.redis_conn:
-        task_dispatcher.redis_conn.close()
-        api_logger.info("Redis connection closed.")
+        try:
+            task_dispatcher.redis_conn.close()
+            api_logger.info("Redis connection closed.")
+        except Exception as e:
+            api_logger.warning(f"关闭 Redis 连接时发生错误: {e}")
 
 
 # 如果直接运行此文件 (例如使用 `python app.py`)，则会启动 Uvicorn 服务器

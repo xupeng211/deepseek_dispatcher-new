@@ -1,20 +1,28 @@
-# 核心依赖
-pydantic-settings
+# ~/projects/deepseek_dispatcher-new/requirements.txt
+
+# FastAPI 框架及其ASGI服务器
 fastapi==0.110.1
-uvicorn[standard]==0.29.0 # 建议固定版本
+uvicorn==0.29.0
+python-dotenv==1.0.1
+# 用于异步HTTP请求，例如调用外部API
+httpx==0.27.0
+# 用于处理JSON数据
+pydantic==2.11.5
+pydantic-settings==2.9.1
+# 日志库
+loguru==0.7.2
+# Redis 客户端和 RQ 任务队列
 redis==5.0.3
 rq==1.16.1
 rq-scheduler==0.13.1
-
-# LLM 相关
-openai==1.35.1 # 如果用到 OpenAI API，固定版本
-requests==2.32.3 # 如果代码中直接使用 requests，固定版本
-httpx==0.27.0 # 如果用到 httpx，固定版本
-tiktoken==0.6.0 # 如果用到 token 计数，固定版本
-
-# 日志记录
-loguru==0.7.2
-
-# 实用工具
-click==8.1.7
-python-dotenv==1.0.1
+# 其他工具
+typer==0.12.3 # 可能用于命令行接口
+pyyaml==6.0.2 # 用于处理 YAML 文件
+click==8.1.7 # 用于构建命令行界面 (Typer的依赖)
+freezegun==1.5.2 # 用于测试时间相关的逻辑
+tiktoken==0.6.0 # OpenAI tokenization library
+tqdm==4.67.1 # 进度条库
+# Supervisor (如果通过 pip 安装，则在这里)
+supervisor==4.2.5 # Supervisor 进程管理工具，如果直接安装在容器内则不需要在 requirements.txt 中
+# DeepSeek 官方 SDK (如果使用的话)
+openai==1.35.1 # DeepSeek 兼容 OpenAI API，使用这个库

@@ -1,0 +1,33 @@
+# 忽略Git相关文件和目录
+.git
+.gitignore
+
+# 忽略Python相关文件和目录
+__pycache__/
+*.pyc
+*.ipynb_checkpoints/
+.pytest_cache/
+.venv/
+.venv_dispatcher_new/ # 你的虚拟环境目录
+
+# 忽略日志文件和目录
+logs/
+*.log
+
+# 忽略配置文件（特别是敏感的 .env 文件）
+.env
+.env.*
+
+# 忽略IDE相关文件
+.idea/
+.vscode/
+
+# 忽略下载的依赖包，例如 pip 缓存
+.pip_cache/
+
+# 忽略任何可能存在的临时文件或数据文件
+tmp/
+*.tmp
+*.swp
+*.bak
+results/ # 如果 results 目录只存放运行结果，不需要打包进镜像

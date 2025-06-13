@@ -1,7 +1,8 @@
-# ~/projects/deepseek_dispatcher-new/Dockerfile
+# ~/projects-native/deepseek_dispatcher-new/Dockerfile
 
 # 直接从本地标签的 Python 镜像构建，确保不进行外部网络拉取
-FROM local-python:3.12-slim
+# 将 FROM 指令指向新的、更明确的本地标签
+FROM my-local-python:3.12-slim
 
 # 基础设置
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -19,10 +20,16 @@ RUN rm -f /etc/apt/sources.list && \
 # ----------------------------------------
 
 # 系统依赖
-# 安装 supervisord 和 curl (如果需要)
+# 安装 supervisord、curl、gdb、python3-dbg 和 redis-tools
+# 确保每行末尾都有反斜杠 '\'，除了最后一行
 RUN apt-get update && apt-get install -y \
-    supervisor curl && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    supervisor \
+    curl \
+    gdb \
+    python3-dbg \
+    redis-tools \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    # ^^^^ 修正：确保 redis-tools 后有一个反斜杠，且 apt-get clean 在同一 RUN 命令中
 
 # Python 依赖
 # 先复制 requirements.txt 以利用 Docker 缓存
@@ -33,6 +40,10 @@ RUN pip install -r requirements.txt
 # 项目代码复制到容器的 /app 目录
 # 注意：这应该在复制依赖之后，以避免不必要的缓存失效
 COPY . /app
+
+# 添加等待 Redis 的 Python 脚本
+COPY wait_for_redis.py /usr/local/bin/wait_for_redis.py
+RUN chmod +x /usr/local/bin/wait_for_redis.py
 
 # Supervisor 配置：
 # 假设你的本地 supervisor/ 目录包含所有进程配置文件（如 worker_high.conf, dispatcher.conf）

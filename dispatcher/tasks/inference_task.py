@@ -1,97 +1,69 @@
-# ~/projects/deepseek_dispatcher-new/dispatcher/tasks/inference_task.py
+# dispatcher/tasks/inference_task.py
 
-from dispatcher.core.base import BaseTask
-from ai_executor.factory import ExecutorFactory
-from ai_executor.executor import ModelExecutionError  # 导入您定义的异常类
-from typing import Dict, Any # 新增：导入Dict和Any用于execute_task的类型提示
+from typing import Dict
+from dispatcher.tasks.base_task import BaseTask
 from common.logging_utils import get_logger
 
 logger = get_logger("inference_task")
 
-
 class InferenceTask(BaseTask):
-    """AI推理任务（替换原有generate_text_task）"""
+    """
+    处理大模型推理任务的类。
+    """
+    def __init__(self, model_name: str):
+        super().__init__()
+        self.model_name = model_name
+        # 这里可以初始化模型客户端，例如：
+        # self.client = YourAIClient(api_key=settings.DEEPSEEK_API_KEY)
 
-    def run(self) -> dict:
-        # 从 payload 中提取任务数据和追踪 ID
-        task_data = self.payload.get("task_data", {})
-        trace_id = self.payload.get("trace_id", "")
-        model_name = self.payload.get("model_name", "default-model") # 从 payload 获取 model_name
+    def execute(self, job_id: str, task_details: Dict): # 修正：execute 方法签名与 dispatcher.dispatch 匹配
+        """
+        执行推理任务。
+        :param job_id: 任务的 Job ID。
+        :param task_details: 包含任务所有详细信息的字典。
+                           例如: {"job_id": "...", "task_type": "...", "payload": {"task_data": {"prompt": "...", "should_fail_for_test": true}}}
+        """
+        # 从 task_details 中提取实际的 task_data
+        # task_data_for_inference_task = task_details.get('payload', {}).get('task_data', {}) # 这是之前 web/app.py 传递过来的结构
+        
+        # 修正：直接从 task_details['payload'] 中获取 task_data_for_inference_task
+        # 因为 dispatch 方法现在直接把 payload 参数（即 web/app.py 中的 task_data_for_inference_task）
+        # 作为 kwargs={'payload': payload_from_web_app} 传给 RQ 任务的。
+        # 而 execute 方法的 signature 则是 def execute(self, job_id, task_details)
+        # 所以这里的 task_details 参数就是 dispatch 传递过来的 kwargs
+        # 也就是 {'job_id': job_id, 'task_details': task_details_from_dispatch_method}
+        # 而 task_details_from_dispatch_method 包含了 'payload' 键，对应 web/app.py 传过来的 task_data_for_inference_task
+        
+        # 修正：直接访问 task_details['payload'] 拿到 web/app.py 传入的 task_data_for_inference_task
+        task_data = task_details.get('payload', {})
 
-        # 从 task_data 提取 prompt 和 model_kwargs
-        prompt = task_data.get("prompt", "")
-        model_kwargs = task_data.get("model_kwargs", {})
 
-        # 初始化执行器工厂
-        # ExecutorFactory 现在使用 settings 来获取 API Key 和 Base URL
-        executor_factory = ExecutorFactory()
+        prompt = task_data.get('prompt', '无提示')
+        should_fail_for_test = task_data.get('should_fail_for_test', False)
 
-        result = ""
-        status = "failed"  # 默认状态为失败
-        error_message = None # 用于存储错误信息
 
-        logger.info(f"开始执行推理任务 {self.task_id} (Trace ID: {trace_id})，模型: {model_name}, prompt 长度: {len(prompt)}")
-        logger.debug(f"模型参数: {model_kwargs}")
+        logger.info(f"开始执行推理任务 (ID: {job_id}), 模型: {self.model_name}, Prompt: {prompt[:50]}...")
+
+        # --- 故意制造一个失败点，用于测试重试和告警 (KT3 验证) ---
+        if should_fail_for_test:
+            error_message = "这是一个人为的测试失败，用于验证任务重试和告警！"
+            logger.error(f"故意制造异常触发任务失败: {error_message}")
+            raise ValueError(error_message)
+        # --- 故意制造失败点结束 ---
 
         try:
-            # 使用 ExecutorFactory 获取并执行推理
-            # ExecutorFactory.get_executor 会根据 model_name 和 settings 返回合适的执行器
-            # execute 方法将接收 prompt 和其他 model_kwargs
-            # 这里的 model_kwargs 会被传递给 execute() 方法，用于覆盖默认的模型参数
-            executor = executor_factory.get_executor(model_name, **model_kwargs)
-            
-            # 确保 execute 方法能够接收并处理 model_kwargs
-            # 注意：BaseExecutor.execute 的签名是 execute(self, prompt: str) -> str
-            # 如果要传递 model_kwargs，需要调整 execute 方法或在 executor_factory.get_executor 时注入
-            # 在目前的 Executor 设计中，model_kwargs 应该在 ExecutorFactory 初始化时传递给具体执行器
-            # 或通过其自身的 __init__ 方法设置。
-            # 因此，这里的 execute(prompt) 是正确的调用方式，model_kwargs 已在 executor 初始化时处理。
-            result = executor.execute(prompt)
-            status = "finished"  # 成功则更新状态
-            logger.info(f"推理任务 {self.task_id} 执行成功。")
-        except ModelExecutionError as e:
-            # 捕获模型执行异常，记录错误信息并设置状态
-            logger.error(f"推理任务 {self.task_id} 失败 (ModelExecutionError): {str(e)}", exc_info=True)
-            result = f"模型推理失败: {str(e)}"
-            status = "failed"
-            error_message = str(e)
+            # 模拟大模型推理耗时操作
+            import time
+            time.sleep(2) # 模拟推理时间
+
+            # 假设这里是调用实际的推理服务
+            # response = self.client.generate(prompt=prompt, **task_data.get('model_kwargs', {}))
+            # result = response.text
+
+            result = f"模拟推理结果：成功处理了 '{prompt}'"
+            logger.info(f"推理任务执行成功 (ID: {job_id}), 结果: {result[:50]}...") # 打印部分结果
+
+            return {"status": "success", "result": result}
         except Exception as e:
-            # 捕获其他未知异常
-            logger.critical(f"推理任务 {self.task_id} 过程中发生未知错误: {str(e)}", exc_info=True)
-            result = f"任务执行过程中发生未知错误: {str(e)}"
-            status = "failed"
-            error_message = str(e)
-
-        return {
-            "task_id": self.task_id,
-            "trace_id": trace_id,
-            "result": result,
-            "status": status,  # 根据执行结果返回最终状态
-            "error": error_message # 包含错误信息
-        }
-
-# --- 新增的 execute_task 函数 ---
-def execute_task(task_type: str, job_id: str, payload: Dict[str, Any]):
-    """
-    根据任务类型执行具体的任务。
-    这个函数将被 RQ worker 调用。
-    它负责实例化并运行 InferenceTask。
-    """
-    logger.info(f"RQ Worker 接收到任务: {job_id}, 类型: {task_type}")
-    # 这里假设我们只处理 "inference" 类型的任务
-    if task_type == "inference":
-        # 实例化 InferenceTask，并传递 job_id 和 payload
-        inference_task = InferenceTask(job_id=job_id, payload=payload)
-        task_result = inference_task.run()
-        logger.info(f"任务 {job_id} 执行完毕，状态: {task_result['status']}")
-        return task_result
-    else:
-        logger.error(f"不支持的任务类型: {task_type} for job {job_id}")
-        return {
-            "task_id": job_id,
-            "trace_id": payload.get("trace_id", ""),
-            "result": None,
-            "status": "failed",
-            "error": f"不支持的任务类型: {task_type}"
-        }
-
+            logger.error(f"推理任务执行失败 (ID: {job_id}): {e}", exc_info=True)
+            raise # 重新抛出异常，让 RQ 捕获并触发重试/告警
